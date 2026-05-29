@@ -1,0 +1,85 @@
+name: Sync sprint stories to GitHub Issues
+
+# Fires when sprint-status.yaml changes on any branch.
+# Stories are synced during the planning branch — issue numbers get
+# committed back into sprint-status.yaml before the PR merges.
+
+on:
+  push:
+    paths:
+      - 'projects/**/implementation-artifacts/sprint-status.yaml'
+
+  # Manual trigger for catch-up or re-sync
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Project to sync (leave blank for all changed)'
+        required: false
+        type: string
+
+permissions:
+  contents: write    # to commit issue numbers back into sprint-status.yaml
+  issues: write      # to create/update/close issues
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so we can commit back
+          fetch-depth: 0
+          # Use a token that can push back to the branch
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Detect changed projects
+        id: detect
+        run: |
+          if [ -n "${{ inputs.project }}" ]; then
+            echo "projects=${{ inputs.project }}" >> "$GITHUB_OUTPUT"
+          else
+            # Find which projects had sprint-status.yaml changes
+            CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'projects/**/sprint-status.yaml' \
+              | sed 's|^projects/||' | cut -d/ -f1 | sort -u | tr '\n' ' ')
+            echo "projects=$CHANGED" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sync issues
+        if: steps.detect.outputs.projects != ''
+        env:
+          GH_TOKEN: ${{ secrets.BMAD_ISSUES_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          for project in ${{ steps.detect.outputs.projects }}; do
+            echo "── Syncing: $project ──"
+
+            # Skip if no sync config
+            if [ ! -f "projects/$project/github-sync.yaml" ]; then
+              echo "  Skipping $project (no github-sync.yaml)"
+              continue
+            fi
+
+            python scripts/bmad-issues.py sync --project "$project"
+          done
+
+      - name: Commit issue number backlinks
+        run: |
+          git config user.name "bmad-issues[bot]"
+          git config user.email "bmad-issues[bot]@users.noreply.github.com"
+
+          if git diff --quiet -- 'projects/**/sprint-status.yaml'; then
+            echo "No changes to commit"
+          else
+            git add 'projects/**/sprint-status.yaml'
+            git commit -m "chore: sync issue numbers in sprint-status.yaml [skip ci]"
+            git push
+          fi

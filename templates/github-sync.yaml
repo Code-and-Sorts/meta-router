@@ -1,0 +1,18 @@
+# GitHub Issues sync configuration for this project.
+# Used by bmad-issues.py and the sync-issues GitHub Action.
+
+# Required: the GitHub repo where issues should be created.
+# This is typically the source code repo, not the metarepo.
+repo: OWNER/REPO-NAME
+
+# Labels applied to created issues by type.
+# These labels must exist in the target repo (create them first).
+labels:
+  epic: epic
+  story: story
+  bug: bug
+
+# Sprint milestone naming. Issues get assigned to a milestone named
+# "{prefix} {sprint_number}" (e.g., "Sprint 1"). Set to empty string
+# to skip milestone assignment. Milestones must exist in the target repo.
+milestone_prefix: Sprint

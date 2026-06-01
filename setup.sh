@@ -193,12 +193,15 @@ if [[ -d "_bmad" ]]; then
   ok "BMAD core already installed"
 else
   info "Installing BMAD Method..."
-  # Non-interactive install (BMAD v6): --yes skips prompts, --modules picks the
-  # module set (core auto-added), --tools targets the IDE/agent integration.
+  # Non-interactive install (BMAD v6): --yes skips prompts where possible,
+  # --directory pins the target (the installer otherwise prompts for it on a TTY
+  # and stalls on non-TTY stdin), --modules picks the module set (core auto-added),
+  # --tools targets the IDE/agent integration (required for fresh --yes installs).
   # Override the module/tool selection via BMAD_INSTALL_MODULES / BMAD_INSTALL_TOOLS.
   BMAD_INSTALL_MODULES="${BMAD_INSTALL_MODULES:-bmm}"
   BMAD_INSTALL_TOOLS="${BMAD_INSTALL_TOOLS:-claude-code}"
-  if npx bmad-method install --yes --modules "$BMAD_INSTALL_MODULES" --tools "$BMAD_INSTALL_TOOLS"; then
+  if npx bmad-method install --yes --directory . \
+       --modules "$BMAD_INSTALL_MODULES" --tools "$BMAD_INSTALL_TOOLS" </dev/null; then
     ok "BMAD installed"
   else
     warn "BMAD auto-install failed — creating minimal skeleton"
@@ -210,18 +213,20 @@ fi
 YAML_CFG="_bmad/bmm/config.yaml"
 if [[ -f "$YAML_CFG" ]]; then
   # Update existing config — replace or append
+  # `sed -i.bak` is portable across GNU (Linux/CI) and BSD (macOS) sed.
   if grep -qE '^\s*output_folder\s*:' "$YAML_CFG" 2>/dev/null; then
-    sed -i "s|^\(\s*output_folder\s*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER\"|" "$YAML_CFG"
+    sed -i.bak "s|^\(\s*output_folder\s*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
   else
     echo "output_folder: \"{project-root}/$USER_OUTPUT_FOLDER\"" >> "$YAML_CFG"
   fi
   if grep -qE '^\s*project_knowledge\s*:' "$YAML_CFG" 2>/dev/null; then
-    sed -i "s|^\(\s*project_knowledge\s*:\).*|\1 \"{project-root}/$USER_DOCS_FOLDER\"|" "$YAML_CFG"
+    sed -i.bak "s|^\(\s*project_knowledge\s*:\).*|\1 \"{project-root}/$USER_DOCS_FOLDER\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
   else
     echo "project_knowledge: \"{project-root}/$USER_DOCS_FOLDER\"" >> "$YAML_CFG"
   fi
   ok "Updated config.yaml: output_folder=$USER_OUTPUT_FOLDER, project_knowledge=$USER_DOCS_FOLDER"
 else
+  mkdir -p "$(dirname "$YAML_CFG")"
   cat > "$YAML_CFG" << YAML
 output_folder: "{project-root}/$USER_OUTPUT_FOLDER"
 project_knowledge: "{project-root}/$USER_DOCS_FOLDER"
@@ -485,9 +490,10 @@ if [[ -f ".gitignore" ]]; then
     cat >> .gitignore << GITIGNORE
 
 # ── bmad-router managed ─────────────────────────────────────────────────────
-# Output + docs symlinks (recreated on switch)
-$USER_OUTPUT_FOLDER
-$USER_DOCS_FOLDER
+# Output + docs symlinks at the repo root (recreated on switch). Anchored with a
+# leading slash so the per-project projects/*/$USER_OUTPUT_FOLDER artifacts stay tracked.
+/$USER_OUTPUT_FOLDER
+/$USER_DOCS_FOLDER
 # Source repo clones + per-story worktrees (managed independently)
 projects/*/repos/
 projects/*/implementation/
@@ -502,9 +508,10 @@ else
   cat > .gitignore << GITIGNORE
 # ── BMAD Metarepo ────────────────────────────────────────────────────────────
 
-# Output + docs symlinks (managed by bmad-router, recreated on switch)
-$USER_OUTPUT_FOLDER
-$USER_DOCS_FOLDER
+# Output + docs symlinks at the repo root (recreated on switch). Anchored with a
+# leading slash so the per-project projects/*/<folder> artifacts stay tracked.
+/$USER_OUTPUT_FOLDER
+/$USER_DOCS_FOLDER
 
 # Source repo clones + per-story worktrees (each managed independently)
 projects/*/repos/

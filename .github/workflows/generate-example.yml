@@ -25,6 +25,7 @@ concurrency:
 
 permissions:
   contents: write   # force-push the example branch
+  issues: write     # sync example stories to GitHub Issues (showcase)
 
 jobs:
   generate:
@@ -62,6 +63,19 @@ jobs:
               cp -R "examples/seed/$proj/." "$GEN/projects/$proj/"
             fi
           done
+
+      - name: Sync example stories to GitHub Issues (showcase)
+        env:
+          GEN_DIR: ${{ runner.temp }}/example-metarepo
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          pip install pyyaml
+          cd "$GEN_DIR"
+          # alpha's github-sync.yaml targets this repo, so its ready stories become
+          # real issues here. Idempotent (markers); writes issue numbers back into
+          # sprint-status.yaml, which the next step commits to the example branch.
+          python scripts/bmad-issues.py sync --project alpha
 
       - name: Force-push generated tree to example branch
         env:

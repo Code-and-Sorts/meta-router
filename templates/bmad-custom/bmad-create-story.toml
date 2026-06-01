@@ -11,9 +11,9 @@
 [workflow]
 
 activation_steps_append = [
-  "This project tracks its source repos in projects/<active>/repos.yaml (resolve <active> with `bash scripts/bmad-router.sh current`). Read it so you know the available repo names.",
+  "Run `bash scripts/bmad-router.sh repos` to list the active project's configured source repos so you know the available repo names.",
 ]
 
 persistent_facts = [
-  "Every story file MUST include a '## Affected Repos' section listing, one per line as `- <repo-name>`, which of the project's repos.yaml repositories the story touches. A backend-only story lists one repo; a full-stack story lists several (e.g. web, gql-aggregator, api). Use the exact repo names from repos.yaml — bmad-router creates a git worktree per listed repo when the story is implemented.",
+  "Every story file MUST include a '## Affected Repos' section listing, one per line as `- <repo-name>`, which of the project's source repos the story touches. A backend-only story lists one repo; a full-stack story lists several (e.g. web, gql-aggregator, api). Use the exact repo names shown by `bash scripts/bmad-router.sh repos` — bmad-router creates a git worktree per listed repo when the story is implemented.",
 ]

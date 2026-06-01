@@ -262,13 +262,13 @@ step 5 "Creating directory structure"
 
 mkdir -p projects
 mkdir -p scripts
-mkdir -p .agents/skills/shared/bmad-router
+mkdir -p .agents/skills/bmad-router
 mkdir -p .agents/knowledge
 mkdir -p tests
 
 ok "projects/"
 ok "scripts/"
-ok ".agents/skills/shared/"
+ok ".agents/skills/ (always-active skills)"
 ok ".agents/knowledge/ (shared across all projects)"
 ok "tests/"
 
@@ -287,8 +287,8 @@ else
 fi
 
 if [[ -f "$SETUP_DIR/SKILL.md" ]]; then
-  cp "$SETUP_DIR/SKILL.md" .agents/skills/shared/bmad-router/SKILL.md
-  ok ".agents/skills/shared/bmad-router/SKILL.md"
+  cp "$SETUP_DIR/SKILL.md" .agents/skills/bmad-router/SKILL.md
+  ok ".agents/skills/bmad-router/SKILL.md"
 fi
 
 if [[ -f "$SETUP_DIR/tests/test_bmad_router.py" ]]; then
@@ -455,14 +455,15 @@ bash scripts/bmad-router.sh validate          # health check
 
 Skills are organized by scope:
 
-- \`.agents/skills/shared/\` — always available regardless of active project.
-  Includes \`bmad-router\` and any org-wide skills.
+- \`.agents/skills/<name>/\` — always-available skills (each is a directory with a
+  \`SKILL.md\`). Includes \`bmad-router\` and any org-wide skills.
 - \`.agents/skills/project/\` — symlink to the active project's skills.
   Only available when that project is switched in.
 - \`.agents/knowledge/\` — shared documentation available to all projects.
   Org standards, coding conventions, architecture patterns.
 
-When resolving a skill reference, check \`shared/\` first, then \`project/\`.
+When resolving a skill reference, check the always-available skills first, then
+the active project's \`project/\` skills.
 
 ## Rules
 
@@ -494,6 +495,9 @@ if [[ -f ".gitignore" ]]; then
 # leading slash so the per-project projects/*/$USER_OUTPUT_FOLDER artifacts stay tracked.
 /$USER_OUTPUT_FOLDER
 /$USER_DOCS_FOLDER
+# Root repos/implementation symlinks (recreated on switch)
+/repos
+/implementation
 # Source repo clones + per-story worktrees (managed independently)
 projects/*/repos/
 projects/*/implementation/
@@ -512,6 +516,10 @@ else
 # leading slash so the per-project projects/*/<folder> artifacts stay tracked.
 /$USER_OUTPUT_FOLDER
 /$USER_DOCS_FOLDER
+
+# Root repos/implementation symlinks (recreated on switch)
+/repos
+/implementation
 
 # Source repo clones + per-story worktrees (each managed independently)
 projects/*/repos/

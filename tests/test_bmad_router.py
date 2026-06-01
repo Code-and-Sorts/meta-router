@@ -18,7 +18,7 @@ def metarepo(tmp_path: Path) -> Path:
     (tmp_path / "_bmad" / "bmm" / "agents").mkdir(parents=True)
     (tmp_path / "_bmad" / "core" / "tasks").mkdir(parents=True)
     (tmp_path / "projects").mkdir()
-    (tmp_path / ".agents" / "skills" / "shared").mkdir(parents=True)
+    (tmp_path / ".agents" / "skills" / "bmad-router").mkdir(parents=True)
     (tmp_path / ".agents" / "knowledge").mkdir(parents=True)
 
     scripts_dir = tmp_path / "scripts"
@@ -271,6 +271,18 @@ class TestSwitch:
         link = metarepo / ".agents" / "skills" / "project"
         assert link.is_symlink()
 
+    def test_creates_repos_and_implementation_symlinks(self, metarepo):
+        run(metarepo, "init", "alpha")
+        assert os.readlink(metarepo / "repos") == "projects/alpha/repos"
+        assert os.readlink(metarepo / "implementation") == "projects/alpha/implementation"
+
+    def test_repos_implementation_symlinks_follow_switch(self, metarepo):
+        run(metarepo, "init", "alpha")
+        run(metarepo, "init", "beta")
+        run(metarepo, "switch", "alpha")
+        assert os.readlink(metarepo / "repos") == "projects/alpha/repos"
+        assert os.readlink(metarepo / "implementation") == "projects/alpha/implementation"
+
     def test_switches_all_three_symlinks(self, metarepo):
         run(metarepo, "init", "alpha")
         run(metarepo, "init", "beta")
@@ -388,13 +400,15 @@ class TestSkillsRouting:
         result = run(metarepo, "switch", "alpha")
         assert "2 project skill(s)" in result.stdout
 
-    def test_shared_skills_unaffected(self, metarepo):
-        shared = metarepo / ".agents" / "skills" / "shared" / "test" / "SKILL.md"
-        shared.parent.mkdir(parents=True, exist_ok=True)
-        shared.write_text("# Shared")
+    def test_always_active_skills_unaffected(self, metarepo):
+        """A flat always-active skill (.agents/skills/<name>/) survives switching."""
+        always_on = metarepo / ".agents" / "skills" / "org-standards" / "SKILL.md"
+        always_on.parent.mkdir(parents=True, exist_ok=True)
+        always_on.write_text("# Org standards")
         run(metarepo, "init", "alpha")
         run(metarepo, "init", "beta")
-        assert shared.exists()
+        run(metarepo, "switch", "alpha")
+        assert always_on.exists()
 
     def test_list_shows_skill_counts(self, metarepo):
         run(metarepo, "init", "alpha")
@@ -588,7 +602,11 @@ class TestEdgeCases:
 
     def test_all_symlinks_relative(self, metarepo):
         run(metarepo, "init", "alpha")
-        for link in [metarepo / "features", metarepo / "docs", metarepo / ".agents" / "skills" / "project"]:
+        for link in [
+            metarepo / "features", metarepo / "docs",
+            metarepo / "repos", metarepo / "implementation",
+            metarepo / ".agents" / "skills" / "project",
+        ]:
             assert not os.path.isabs(os.readlink(link)), f"{link} should be relative"
 
     def test_many_projects(self, metarepo):

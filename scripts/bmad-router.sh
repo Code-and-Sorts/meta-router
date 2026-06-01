@@ -124,6 +124,8 @@ check_metarepo() {
 # Computed paths
 symlink_path()    { echo "$REPO_ROOT/$OUTPUT_FOLDER_NAME"; }
 docs_symlink()    { echo "$REPO_ROOT/$DOCS_FOLDER_NAME"; }
+repos_symlink()   { echo "$REPO_ROOT/repos"; }
+impl_symlink()    { echo "$REPO_ROOT/implementation"; }
 project_output()     { echo "$PROJECTS_DIR/$1/$OUTPUT_FOLDER_NAME"; }
 project_docs()       { echo "$PROJECTS_DIR/$1/$DOCS_FOLDER_NAME"; }
 project_skills()     { echo "$PROJECTS_DIR/$1/.agents/skills"; }
@@ -379,6 +381,11 @@ switch_all_symlinks() {
   # Docs folder
   swap_symlink "$(docs_symlink)" "projects/$project_name/$DOCS_FOLDER_NAME" "$DOCS_FOLDER_NAME"
 
+  # Source repos + per-story worktrees — routed at the root so the active
+  # project's clones/worktrees are reachable without a projects/<active>/ path.
+  swap_symlink "$(repos_symlink)" "projects/$project_name/repos" "repos"
+  swap_symlink "$(impl_symlink)" "projects/$project_name/implementation" "implementation"
+
   # Skills
   mkdir -p "$SKILLS_DIR"
   if [[ -L "$SKILLS_PROJECT_LINK" ]]; then
@@ -512,6 +519,14 @@ cmd_current() {
   if [[ -L "$ds" ]]; then
     echo -e "  ${DIM}docs:   $DOCS_FOLDER_NAME -> $(readlink "$ds")${NC}"
   fi
+
+  local rs
+  rs="$(repos_symlink)"
+  [[ -L "$rs" ]] && echo -e "  ${DIM}repos:  repos -> $(readlink "$rs")${NC}"
+
+  local is
+  is="$(impl_symlink)"
+  [[ -L "$is" ]] && echo -e "  ${DIM}impl:   implementation -> $(readlink "$is")${NC}"
 
   if [[ -L "$SKILLS_PROJECT_LINK" ]]; then
     local skill_count
@@ -943,6 +958,8 @@ cmd_help() {
   SYMLINKS MANAGED
     <output-folder>            → projects/<active>/<output-folder>
     <docs-folder>              → projects/<active>/<docs-folder>
+    repos                      → projects/<active>/repos
+    implementation             → projects/<active>/implementation
     .agents/skills/project     → projects/<active>/.agents/skills
 
   SOURCE REPOS + WORKTREES

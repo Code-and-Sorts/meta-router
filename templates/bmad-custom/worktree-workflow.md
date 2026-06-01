@@ -7,24 +7,26 @@ implementing any BMAD story.
 
 ## Layout
 
-For the active project (`bash scripts/bmad-router.sh current`):
+bmad-router routes the **active** project through root-level symlinks, so you work
+from repo-root-relative paths and never need the `projects/<name>/` path:
 
 ```
-projects/<active>/
-├── repos.yaml                          # tracked manifest of source repos
-├── repos/                              # git clones (gitignored)
+<metarepo root>/
+├── repos.yaml -> projects/<active>/repos.yaml is NOT symlinked; use
+│                 `bash scripts/bmad-router.sh repos` to list configured repos
+├── repos/            -> projects/<active>/repos/            (git clones, gitignored)
 │   ├── web/
 │   ├── gql-aggregator/
 │   └── api/
-└── implementation/                     # per-story worktrees (gitignored)
+└── implementation/   -> projects/<active>/implementation/   (worktrees, gitignored)
     └── <story-id>/
-        ├── web/                        # worktree on branch story/<story-id>
-        ├── gql-aggregator/             # worktree on branch story/<story-id>
-        └── api/                        # worktree on branch story/<story-id>
+        ├── web/              # worktree on branch story/<story-id>
+        ├── gql-aggregator/   # worktree on branch story/<story-id>
+        └── api/              # worktree on branch story/<story-id>
 ```
 
-- `repos.yaml` is the source of truth for which repos the project owns. Each
-  entry has `name`, `url`, and `branch`.
+- The project's repo manifest is `repos.yaml`; list it with
+  `bash scripts/bmad-router.sh repos`. Each entry has `name`, `url`, `branch`.
 - `repos/<name>/` is a full clone, created by `clone`. Never edit code here.
 - `implementation/<story-id>/<name>/` is an isolated worktree off the matching
   clone, checked out on branch `story/<story-id>`. Implement story code here.
@@ -40,7 +42,7 @@ repo.
 ## Procedure
 
 1. **Identify affected repos.** Read the story's `## Affected Repos` section. The
-   listed names match `repos.yaml` entries.
+   listed names match the output of `bash scripts/bmad-router.sh repos`.
 2. **Ensure clones exist.** For each affected repo not yet under `repos/`, run:
    ```bash
    bash scripts/bmad-router.sh clone <repo>
@@ -52,8 +54,8 @@ repo.
    bash scripts/bmad-router.sh worktree <story-id> --all
    ```
 4. **Implement inside the worktrees.** Make all changes under
-   `projects/<active>/implementation/<story-id>/<repo>/`. Commit on the
-   `story/<story-id>` branch in each repo. Do not edit `repos/<repo>/` directly.
+   `implementation/<story-id>/<repo>/`. Commit on the `story/<story-id>` branch in
+   each repo. Do not edit `repos/<repo>/` directly.
 5. **Review the worktrees.** List active ones any time with:
    ```bash
    bash scripts/bmad-router.sh worktree list
@@ -66,6 +68,8 @@ repo.
 
 ## Notes
 
+- `repos/` and `implementation/` are root symlinks to the active project; they
+  repoint automatically when you `bash scripts/bmad-router.sh switch <project>`.
 - Worktrees and clones are gitignored — the metarepo tracks planning artifacts
   and `repos.yaml`, not source code.
 - The branch name is always `story/<story-id>`; re-running `worktree` for an

@@ -24,8 +24,7 @@ metarepo/
 ├── active-project.txt
 ├── .agents/
 │   ├── skills/
-│   │   ├── shared/                     # Always-active skills
-│   │   │   └── bmad-router/
+│   │   ├── bmad-router/                # Always-active skill (flat, not nested)
 │   │   └── project -> ...              # Per-project skills symlink
 │   └── knowledge/                      # Shared docs (all projects)
 ├── projects/
@@ -77,8 +76,9 @@ Resolution order: env var → `_bmad/bmm/config.yaml` → `_bmad/config.toml` �
 
 Each project can have agent skills at `projects/<name>/.agents/skills/`.
 When the router switches to a project, `.agents/skills/project` symlinks
-to that project's skills directory. Skills in `.agents/skills/shared/`
-are always available regardless of the active project.
+to that project's skills directory. Always-active skills (like `bmad-router`)
+live directly at `.agents/skills/<name>/` and are available regardless of the
+active project.
 
 ## Shared Knowledge
 

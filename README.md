@@ -51,7 +51,7 @@ The important parts:
 - `projects/<name>/docs/` is project-specific knowledge that BMAD agents read as `project_knowledge`.
 - `projects/<name>/.agents/skills/` holds agent skills that only activate when that project is switched in.
 - `.agents/knowledge/` is shared documentation that's always available regardless of active project. Org standards, coding conventions, review checklists.
-- `.agents/skills/shared/` is for skills that are always active (like bmad-router itself).
+- `.agents/skills/<name>/` holds always-active skills (like bmad-router itself), each a directory with a `SKILL.md`. The active project's skills are exposed via the `.agents/skills/project` symlink.
 - `projects/<name>/repos.yaml` is a tracked manifest of the project's source repos. `projects/<name>/repos/` holds their git clones and `projects/<name>/implementation/` holds per-story git worktrees — both gitignored. See [Source repos and story worktrees](#source-repos-and-story-worktrees).
 - `AGENTS.md` is the context file for AI agents. Named `AGENTS.md` rather than `CLAUDE.md` so it works with Claude Code, Copilot, Cursor, or anything else that reads a root markdown file.
 
@@ -89,7 +89,7 @@ The setup script writes your choices into config.yaml, so the router reads them 
 
 Each project can have its own agent skills at `projects/<name>/.agents/skills/<skill-name>/SKILL.md`. They activate when you switch to that project and deactivate when you switch away. If your food-inventory project needs a custom recipe-parsing skill but your camera app doesn't, this keeps them separate.
 
-Shared skills at `.agents/skills/shared/` are always active.
+Always-active skills at `.agents/skills/<name>/` (like bmad-router) are available regardless of the active project.
 
 ## Source repos and story worktrees
 
@@ -125,7 +125,7 @@ bash scripts/bmad-router.sh worktree list                # active per-story work
 bash scripts/bmad-router.sh worktree-rm STORY-001        # tear them all down
 ```
 
-This lays out worktrees as `projects/<name>/implementation/<story-id>/<repo>/`, gitignored, each checked out on `story/<story-id>`.
+This lays out worktrees as `projects/<name>/implementation/<story-id>/<repo>/`, gitignored, each checked out on `story/<story-id>`. Like `features`/`docs`, the active project's `repos/` and `implementation/` are also exposed as root-level symlinks, so you (and BMAD agents) can use `repos/<name>/` and `implementation/<story-id>/<repo>/` from the metarepo root without naming the active project.
 
 ### Driven by BMAD, not by hand
 

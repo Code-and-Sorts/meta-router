@@ -73,6 +73,23 @@ jobs:
           # setup.sh runs `git init` in the target dir (no commits). Discard that
           # empty repo so we start a clean, single-commit history on `example`.
           rm -rf .git
+          # The default GITHUB_TOKEN is forbidden (by GitHub design) from pushing
+          # files under .github/workflows/. The generated metarepo ships a
+          # sync-issues workflow there, so relocate any such files to a visible,
+          # non-workflows path on the static example branch.
+          if [ -d .github/workflows ] && [ -n "$(ls -A .github/workflows 2>/dev/null)" ]; then
+            mkdir -p .github/example-workflows
+            mv .github/workflows/* .github/example-workflows/
+            rmdir .github/workflows
+            printf '%s\n' \
+              '# example-workflows/' \
+              '' \
+              'On a real metarepo these files live under `.github/workflows/`. They are' \
+              'relocated here on the static example branch because the auto-publish job' \
+              'pushes with the default GITHUB_TOKEN, which GitHub forbids from writing' \
+              'workflow files. Copy them back to .github/workflows/ in your own metarepo.' \
+              > .github/example-workflows/README.md
+          fi
           # Standalone single-commit history: the example tree differs from main,
           # so a fresh init + force-push keeps `example` clean and conflict-free.
           git init -q -b example

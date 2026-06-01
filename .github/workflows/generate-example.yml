@@ -12,6 +12,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # TEMPORARY: validate the workflow end-to-end on this PR. Remove this
+  # `pull_request` trigger before merging — the example branch should only be
+  # regenerated from main.
+  pull_request:
+    branches: [main]
 
 # Don't let two main pushes race on the force-push.
 concurrency:

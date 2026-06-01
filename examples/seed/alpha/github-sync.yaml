@@ -1,0 +1,9 @@
+# GitHub Issues sync configuration for the "alpha" example project.
+repo: example-org/alpha-api
+
+labels:
+  epic: epic
+  story: story
+  bug: bug
+
+milestone_prefix: Sprint

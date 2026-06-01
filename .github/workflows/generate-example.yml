@@ -1,0 +1,82 @@
+name: Generate example branch
+
+# On every push to main, regenerate a full example metarepo (real BMAD install)
+# and force-push it to the `example` branch so reviewers can browse a realistic
+# setup. The example branch is disposable — each run replaces it with a single
+# fresh commit reflecting the latest main.
+#
+# No infinite loop: this only triggers on pushes to `main`; it pushes to
+# `example`, which can never retrigger this workflow.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Don't let two main pushes race on the force-push.
+concurrency:
+  group: generate-example
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # force-push the example branch
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main (source of setup.sh + seed)
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate example metarepo
+        env:
+          BMAD_SETUP_NONINTERACTIVE: '1'
+          BMAD_OUTPUT_FOLDER: features
+          BMAD_DOCS_FOLDER: docs
+          BMAD_SETUP_PROJECTS: 'alpha,beta'
+          BMAD_SETUP_ISSUES_SYNC: 'y'
+        run: |
+          set -euxo pipefail
+          GEN="$RUNNER_TEMP/example-metarepo"
+          rm -rf "$GEN"
+          # Runs the real `npx bmad-method install` (network, ~minutes).
+          bash setup.sh "$GEN"
+          # Overlay curated seed content over the scaffolded projects.
+          for proj in alpha beta; do
+            if [ -d "examples/seed/$proj" ]; then
+              cp -R "examples/seed/$proj/." "$GEN/projects/$proj/"
+            fi
+          done
+
+      - name: Force-push generated tree to example branch
+        env:
+          GEN_DIR: ${{ runner.temp }}/example-metarepo
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          cd "$GEN_DIR"
+          # setup.sh runs `git init` in the target dir (no commits). Discard that
+          # empty repo so we start a clean, single-commit history on `example`.
+          rm -rf .git
+          # Standalone single-commit history: the example tree differs from main,
+          # so a fresh init + force-push keeps `example` clean and conflict-free.
+          git init -q -b example
+          git config user.name "bmad-example[bot]"
+          git config user.email "bmad-example[bot]@users.noreply.github.com"
+          git add -A
+          # repos/ and implementation/ are gitignored in a real metarepo; force-add
+          # the placeholder READMEs so the structure is visible on the branch.
+          git add --force projects/*/repos/ projects/*/implementation/ || true
+          git commit -qm "chore: regenerate example metarepo from ${GITHUB_SHA}"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin example

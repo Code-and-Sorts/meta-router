@@ -4,6 +4,10 @@ A multi-project context switcher for [BMAD Method](https://github.com/bmad-code-
 
 BMAD assumes one project per repo. If you're running multiple projects that share the same agents, workflows, and conventions, you end up duplicating `_bmad/` everywhere or doing awkward copy-paste between repos. This tool lets you keep a single BMAD core and switch between isolated project contexts with a symlink swap.
 
+## Browse a live example
+
+Every push to `main` regenerates a full example metarepo and publishes it to the [`example` branch](../../tree/example). Browse it to see the layout without running setup yourself: two projects (a multi-repo `alpha` and a single-repo `beta`), each project's `repos.yaml`, sample PRD/epic/sprint-status artifacts, a full-stack story (`STORY-001`) with an `## Affected Repos` section, and the BMAD worktree customization under `_bmad/custom/`.
+
 ## The problem
 
 You want one repo with shared BMAD infrastructure but separate planning artifacts per project. Each project needs its own PRD, architecture doc, epics, stories, sprint status, docs, and agent skills — but they all use the same agents and workflows.
@@ -48,7 +52,7 @@ The important parts:
 - `projects/<name>/.agents/skills/` holds agent skills that only activate when that project is switched in.
 - `.agents/knowledge/` is shared documentation that's always available regardless of active project. Org standards, coding conventions, review checklists.
 - `.agents/skills/shared/` is for skills that are always active (like bmad-router itself).
-- `projects/<name>/src/` is gitignored by default. Each project's source code is expected to be managed independently — its own repo, a submodule, whatever fits your setup.
+- `projects/<name>/repos.yaml` is a tracked manifest of the project's source repos. `projects/<name>/repos/` holds their git clones and `projects/<name>/implementation/` holds per-story git worktrees — both gitignored. See [Source repos and story worktrees](#source-repos-and-story-worktrees).
 - `AGENTS.md` is the context file for AI agents. Named `AGENTS.md` rather than `CLAUDE.md` so it works with Claude Code, Copilot, Cursor, or anything else that reads a root markdown file.
 
 ## Usage
@@ -87,13 +91,58 @@ Each project can have its own agent skills at `projects/<name>/.agents/skills/<s
 
 Shared skills at `.agents/skills/shared/` are always active.
 
+## Source repos and story worktrees
+
+The metarepo tracks planning artifacts, not source code — but it does know where each project's source lives and gives BMAD stories an isolated place to be implemented.
+
+Each project declares its source repos in a tracked `projects/<name>/repos.yaml`:
+
+```yaml
+repos:
+  - name: web
+    url: git@github.com:you/web.git
+    branch: main
+  - name: api
+    url: git@github.com:you/api.git
+    branch: main
+```
+
+`clone` pulls those into the gitignored `projects/<name>/repos/`:
+
+```
+bash scripts/bmad-router.sh clone          # all repos in repos.yaml
+bash scripts/bmad-router.sh clone web      # just one
+bash scripts/bmad-router.sh repos          # list configured repos + clone status
+```
+
+When you implement a story, create a git worktree per repo it touches. A single full-stack story can span several repos at once — a web app, a GraphQL aggregator, a backend service — and each gets its own worktree on a shared `story/<story-id>` branch:
+
+```
+bash scripts/bmad-router.sh worktree STORY-001 web api   # one worktree per repo
+bash scripts/bmad-router.sh worktree STORY-001 --all     # every configured repo
+bash scripts/bmad-router.sh worktree STORY-001           # the sole repo, if only one
+bash scripts/bmad-router.sh worktree list                # active per-story worktrees
+bash scripts/bmad-router.sh worktree-rm STORY-001        # tear them all down
+```
+
+This lays out worktrees as `projects/<name>/implementation/<story-id>/<repo>/`, gitignored, each checked out on `story/<story-id>`.
+
+### Driven by BMAD, not by hand
+
+You don't have to remember to run these commands. The setup installs two BMAD customization overrides into `_bmad/custom/` ([BMAD's supported override mechanism](https://docs.bmad-method.org/how-to/customize-bmad/)):
+
+- `bmad-create-story.toml` tells the Scrum Master agent to add a structured `## Affected Repos` section to every story, listing which `repos.yaml` repos it touches.
+- `bmad-dev-story.toml` tells the Dev agent to read that section and run `clone`/`worktree` before implementing, then work inside the per-story worktrees. The full procedure lives in `_bmad/custom/worktree-workflow.md`.
+
+So the story's own context decides how many worktrees get created. Edit or extend those files (or add personal `*.user.toml` variants) to fit your workflow.
+
 ## Known limitations and opinions
 
 - **Symlinks on Windows.** Git on Windows needs `core.symlinks=true` and you may need to run your terminal as admin. WSL works fine. This was a deliberate tradeoff — symlinks are the simplest mechanism that lets BMAD workflows work unmodified.
 
 - **No partial switching.** You can't have output pointing to one project and docs pointing to another. All three symlinks move together. This is intentional — split-brain state between projects would be a debugging nightmare.
 
-- **Source code is gitignored.** The metarepo tracks planning artifacts and BMAD config, not source code. If you want to track source in the metarepo too, remove the `projects/*/src/` line from `.gitignore`.
+- **Source code is gitignored.** The metarepo tracks planning artifacts, BMAD config, and each project's `repos.yaml` manifest — not source code. Clones (`projects/*/repos/`) and per-story worktrees (`projects/*/implementation/`) are gitignored. If you want to track source in the metarepo too, remove those lines from `.gitignore`.
 
 - **Single BMAD install.** All projects share one `_bmad/` — same agents, same workflows, same version. If two projects need different BMAD versions, they should be in separate repos.
 
@@ -101,7 +150,7 @@ Shared skills at `.agents/skills/shared/` are always active.
 
 ## Tests
 
-78 tests total: 55 for the router (init, switch, list, current, validate, config, docs routing, skills isolation, custom folder names, edge cases) and 23 for the issue sync (story collection, marker parsing, status classification, writeback, file reading).
+90 tests total: 67 for the router (init, switch, list, current, validate, config, docs routing, skills isolation, custom folder names, source repos, multi-repo worktrees, edge cases) and 23 for the issue sync (story collection, marker parsing, status classification, writeback, file reading).
 
 ```
 pip install pytest pyyaml
@@ -184,10 +233,18 @@ bmad-router/
 ├── templates/
 │   ├── .github/workflows/
 │   │   └── sync-issues.yml         # GitHub Action (optional)
+│   ├── bmad-custom/                # BMAD overrides → _bmad/custom/
+│   │   ├── bmad-dev-story.toml     #   create per-story worktrees on implement
+│   │   ├── bmad-create-story.toml  #   add "## Affected Repos" to stories
+│   │   └── worktree-workflow.md    #   the worktree procedure (loaded as context)
 │   └── github-sync.yaml            # Per-project sync config template
+├── examples/seed/                  # Seed content overlaid onto the example branch
+├── .github/workflows/
+│   ├── ci.yml                      # pytest + shellcheck
+│   └── generate-example.yml        # Publishes the example branch on push to main
 ├── SKILL.md                        # Agent skill definition
 ├── tests/
-│   ├── test_bmad_router.py         # Router tests (55)
+│   ├── test_bmad_router.py         # Router tests (67)
 │   └── test_bmad_issues.py         # Issue sync tests (23)
 ├── docs/images/                    # README screenshots
 └── README.md

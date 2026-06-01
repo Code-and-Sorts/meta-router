@@ -54,12 +54,53 @@ def add_project_skill(metarepo, project, skill_name):
     return skill_dir
 
 
+GIT_ENV = {
+    "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+}
+
+
+def make_source_repo(tmp_path, name):
+    """Create a real local git repo to act as a cloneable source remote."""
+    src = tmp_path / f"source-{name}"
+    src.mkdir()
+    env = {**os.environ, **GIT_ENV}
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=src, check=True, env=env)
+    (src / "README.md").write_text(f"# {name}\n")
+    subprocess.run(["git", "add", "."], cwd=src, check=True, env=env)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=src, check=True, env=env)
+    return src
+
+
+def write_repos_yaml(metarepo, project, repos):
+    """repos: list of (name, source_path) tuples."""
+    lines = ["repos:"]
+    for name, src in repos:
+        lines += [
+            f"  - name: {name}",
+            f"    url: file://{src}",
+            "    branch: main",
+        ]
+    (metarepo / "projects" / project / "repos.yaml").write_text("\n".join(lines) + "\n")
+
+
+def git_branch(path):
+    return subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=path, capture_output=True, text=True,
+    ).stdout.strip()
+
+
 # ── Init ─────────────────────────────────────────────────────────────────────
 
 class TestInit:
     def test_creates_project_directory(self, metarepo):
         run(metarepo, "init", "alpha")
-        assert (metarepo / "projects" / "alpha" / "src").is_dir()
+        project = metarepo / "projects" / "alpha"
+        assert (project / "repos").is_dir()
+        assert (project / "implementation").is_dir()
+        assert (project / "repos.yaml").is_file()
+        assert not (project / "src").exists()
 
     def test_scaffolds_features_folder(self, metarepo):
         """Default output folder is 'features'."""
@@ -102,6 +143,112 @@ class TestInit:
     def test_no_name_fails(self, metarepo):
         result = run(metarepo, "init", expect_fail=True)
         assert result.returncode != 0
+
+
+# ── Repos + worktrees ────────────────────────────────────────────────────────
+
+class TestRepos:
+    def test_init_scaffolds_repos_yaml(self, metarepo):
+        run(metarepo, "init", "alpha")
+        repos_yaml = metarepo / "projects" / "alpha" / "repos.yaml"
+        assert repos_yaml.is_file()
+        assert "repos:" in repos_yaml.read_text()
+
+    def test_init_creates_repos_and_implementation_dirs(self, metarepo):
+        run(metarepo, "init", "alpha")
+        assert (metarepo / "projects" / "alpha" / "repos").is_dir()
+        assert (metarepo / "projects" / "alpha" / "implementation").is_dir()
+
+    def test_repos_command_empty_on_fresh_project(self, metarepo):
+        run(metarepo, "init", "alpha")
+        result = run(metarepo, "repos")
+        assert "No repos configured" in result.stdout
+
+    def test_repos_lists_configured(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        write_repos_yaml(metarepo, "alpha", [("web", web)])
+        result = run(metarepo, "repos")
+        assert "web" in result.stdout
+        assert "not cloned" in result.stdout
+
+    def test_clone_populates_repos_dir(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        write_repos_yaml(metarepo, "alpha", [("web", web)])
+        run(metarepo, "clone")
+        assert (metarepo / "projects" / "alpha" / "repos" / "web" / ".git").exists()
+
+    def test_worktree_default_sole_repo(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        write_repos_yaml(metarepo, "alpha", [("web", web)])
+        run(metarepo, "clone")
+        run(metarepo, "worktree", "STORY-1")
+        wt = metarepo / "projects" / "alpha" / "implementation" / "STORY-1" / "web"
+        assert (wt / ".git").exists()
+        assert git_branch(wt) == "story/STORY-1"
+
+    def test_worktree_multi_repo(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        api = make_source_repo(tmp_path, "api")
+        write_repos_yaml(metarepo, "alpha", [("web", web), ("api", api)])
+        run(metarepo, "clone")
+        run(metarepo, "worktree", "STORY-1", "web", "api")
+        impl = metarepo / "projects" / "alpha" / "implementation" / "STORY-1"
+        assert (impl / "web" / ".git").exists()
+        assert (impl / "api" / ".git").exists()
+        assert git_branch(impl / "web") == "story/STORY-1"
+        assert git_branch(impl / "api") == "story/STORY-1"
+
+    def test_worktree_all_flag(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        api = make_source_repo(tmp_path, "api")
+        write_repos_yaml(metarepo, "alpha", [("web", web), ("api", api)])
+        run(metarepo, "clone")
+        run(metarepo, "worktree", "STORY-2", "--all")
+        impl = metarepo / "projects" / "alpha" / "implementation" / "STORY-2"
+        assert (impl / "web").is_dir()
+        assert (impl / "api").is_dir()
+
+    def test_worktree_requires_repo_when_multiple(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        api = make_source_repo(tmp_path, "api")
+        write_repos_yaml(metarepo, "alpha", [("web", web), ("api", api)])
+        run(metarepo, "clone")
+        result = run(metarepo, "worktree", "STORY-3", expect_fail=True)
+        assert result.returncode != 0
+        assert "specify which" in result.stderr.lower()
+
+    def test_worktree_rejects_unknown_repo(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        write_repos_yaml(metarepo, "alpha", [("web", web)])
+        run(metarepo, "clone")
+        result = run(metarepo, "worktree", "STORY-4", "ghost", expect_fail=True)
+        assert result.returncode != 0
+
+    def test_worktree_rm_removes(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        api = make_source_repo(tmp_path, "api")
+        write_repos_yaml(metarepo, "alpha", [("web", web), ("api", api)])
+        run(metarepo, "clone")
+        run(metarepo, "worktree", "STORY-5", "--all")
+        run(metarepo, "worktree-rm", "STORY-5")
+        assert not (metarepo / "projects" / "alpha" / "implementation" / "STORY-5").exists()
+
+    def test_worktree_list(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        write_repos_yaml(metarepo, "alpha", [("web", web)])
+        run(metarepo, "clone")
+        run(metarepo, "worktree", "STORY-6")
+        result = run(metarepo, "worktree", "list")
+        assert "STORY-6" in result.stdout
 
 
 # ── Switch ───────────────────────────────────────────────────────────────────

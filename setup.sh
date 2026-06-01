@@ -43,13 +43,28 @@ echo ""
 
 step 1 "Configuration"
 
+# Non-interactive mode for CI / scripted installs. When BMAD_SETUP_NONINTERACTIVE=1,
+# every prompt is skipped and answers are sourced from environment variables:
+#   BMAD_OUTPUT_FOLDER     output folder name      (default: features)
+#   BMAD_DOCS_FOLDER       docs folder name        (default: docs)
+#   BMAD_SETUP_PROJECTS    comma-separated projects (default: none)
+#   BMAD_SETUP_ISSUES_SYNC y/n to enable sync       (default: n)
+NONINTERACTIVE="${BMAD_SETUP_NONINTERACTIVE:-0}"
+if [[ "$NONINTERACTIVE" == 1 ]]; then
+  info "Non-interactive mode (BMAD_SETUP_NONINTERACTIVE=1)"
+fi
+
 # Output folder name
-echo -e "  What should the output folder be called?"
-echo -e "  This is where PRDs, epics, stories, and architecture docs live."
-echo -e "  ${DIM}(BMAD default: _bmad-output)${NC}"
-echo ""
-read -rp "  Output folder name [features]: " USER_OUTPUT_FOLDER
-USER_OUTPUT_FOLDER="${USER_OUTPUT_FOLDER:-features}"
+if [[ "$NONINTERACTIVE" == 1 ]]; then
+  USER_OUTPUT_FOLDER="${BMAD_OUTPUT_FOLDER:-features}"
+else
+  echo -e "  What should the output folder be called?"
+  echo -e "  This is where PRDs, epics, stories, and architecture docs live."
+  echo -e "  ${DIM}(BMAD default: _bmad-output)${NC}"
+  echo ""
+  read -rp "  Output folder name [features]: " USER_OUTPUT_FOLDER
+  USER_OUTPUT_FOLDER="${USER_OUTPUT_FOLDER:-features}"
+fi
 
 # Validate folder name
 if [[ ! "$USER_OUTPUT_FOLDER" =~ ^[a-zA-Z0-9._-]+$ ]]; then
@@ -60,12 +75,16 @@ echo ""
 ok "Output folder: ${BOLD}$USER_OUTPUT_FOLDER${NC}"
 
 # Docs folder name
-echo ""
-echo -e "  What should the docs folder be called?"
-echo -e "  This is project_knowledge — ADRs, specs, domain docs."
-echo ""
-read -rp "  Docs folder name [docs]: " USER_DOCS_FOLDER
-USER_DOCS_FOLDER="${USER_DOCS_FOLDER:-docs}"
+if [[ "$NONINTERACTIVE" == 1 ]]; then
+  USER_DOCS_FOLDER="${BMAD_DOCS_FOLDER:-docs}"
+else
+  echo ""
+  echo -e "  What should the docs folder be called?"
+  echo -e "  This is project_knowledge — ADRs, specs, domain docs."
+  echo ""
+  read -rp "  Docs folder name [docs]: " USER_DOCS_FOLDER
+  USER_DOCS_FOLDER="${USER_DOCS_FOLDER:-docs}"
+fi
 
 if [[ ! "$USER_DOCS_FOLDER" =~ ^[a-zA-Z0-9._-]+$ ]]; then
   die "Folder name must contain only letters, numbers, dots, hyphens, and underscores."
@@ -74,12 +93,16 @@ fi
 ok "Docs folder: ${BOLD}$USER_DOCS_FOLDER${NC}"
 
 # Initial projects
-echo ""
-echo -e "  Projects to create (comma-separated, or leave blank to skip):"
-echo -e "  ${DIM}Example: food-inventory, film-camera-app, diy-camera${NC}"
-echo ""
-read -rp "  Projects: " USER_PROJECTS
-echo ""
+if [[ "$NONINTERACTIVE" == 1 ]]; then
+  USER_PROJECTS="${BMAD_SETUP_PROJECTS:-}"
+else
+  echo ""
+  echo -e "  Projects to create (comma-separated, or leave blank to skip):"
+  echo -e "  ${DIM}Example: food-inventory, film-camera-app, diy-camera${NC}"
+  echo ""
+  read -rp "  Projects: " USER_PROJECTS
+  echo ""
+fi
 
 # Parse and validate project names
 PROJECTS=()
@@ -99,12 +122,16 @@ else
 fi
 
 # GitHub Issues sync
-echo ""
-echo -e "  Enable GitHub Issues sync? This adds a GitHub Action that"
-echo -e "  creates issues from sprint-status.yaml when stories are ready."
-echo -e "  ${DIM}(Requires gh CLI and a GitHub repo per project)${NC}"
-echo ""
-read -rp "  Enable issues sync? [y/N]: " USER_ISSUES_SYNC
+if [[ "$NONINTERACTIVE" == 1 ]]; then
+  USER_ISSUES_SYNC="${BMAD_SETUP_ISSUES_SYNC:-n}"
+else
+  echo ""
+  echo -e "  Enable GitHub Issues sync? This adds a GitHub Action that"
+  echo -e "  creates issues from sprint-status.yaml when stories are ready."
+  echo -e "  ${DIM}(Requires gh CLI and a GitHub repo per project)${NC}"
+  echo ""
+  read -rp "  Enable issues sync? [y/N]: " USER_ISSUES_SYNC
+fi
 ENABLE_ISSUES=false
 if [[ "${USER_ISSUES_SYNC,,}" == "y" || "${USER_ISSUES_SYNC,,}" == "yes" ]]; then
   ENABLE_ISSUES=true
@@ -166,11 +193,16 @@ if [[ -d "_bmad" ]]; then
   ok "BMAD core already installed"
 else
   info "Installing BMAD Method..."
-  if npx bmad-method install --quick; then
+  # Non-interactive install (BMAD v6): --yes skips prompts, --modules picks the
+  # module set (core auto-added), --tools targets the IDE/agent integration.
+  # Override the module/tool selection via BMAD_INSTALL_MODULES / BMAD_INSTALL_TOOLS.
+  BMAD_INSTALL_MODULES="${BMAD_INSTALL_MODULES:-bmm}"
+  BMAD_INSTALL_TOOLS="${BMAD_INSTALL_TOOLS:-claude-code}"
+  if npx bmad-method install --yes --modules "$BMAD_INSTALL_MODULES" --tools "$BMAD_INSTALL_TOOLS"; then
     ok "BMAD installed"
   else
     warn "BMAD auto-install failed — creating minimal skeleton"
-    mkdir -p _bmad/bmm/agents _bmad/core/tasks
+    mkdir -p _bmad/bmm/agents _bmad/core/tasks _bmad/custom
   fi
 fi
 
@@ -273,6 +305,18 @@ Examples:
   - review-checklist.md — PR review requirements
 KNOWLEDGEMD
   ok ".agents/knowledge/README.md"
+fi
+
+# Install BMAD customization overrides that drive per-story git worktrees.
+# These hook the bmad-dev-story / bmad-create-story skills via _bmad/custom/.
+if [[ -d "$SETUP_DIR/templates/bmad-custom" && -d "_bmad" ]]; then
+  mkdir -p _bmad/custom
+  for f in bmad-dev-story.toml bmad-create-story.toml worktree-workflow.md; do
+    if [[ -f "$SETUP_DIR/templates/bmad-custom/$f" && ! -f "_bmad/custom/$f" ]]; then
+      cp "$SETUP_DIR/templates/bmad-custom/$f" "_bmad/custom/$f"
+      ok "_bmad/custom/$f"
+    fi
+  done
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -421,7 +465,12 @@ When resolving a skill reference, check \`shared/\` first, then \`project/\`.
 - If a user mentions a project that isn't active, ask before switching.
 - Follow the workflow phases in order: don't skip from brief to implementation.
 - Read \`project-context.md\` before writing any implementation code.
-- Project source code lives in \`projects/<name>/src/\` (gitignored by default).
+- Source repos are declared in \`projects/<name>/repos.yaml\` (tracked). Clones live
+  in \`projects/<name>/repos/\` and per-story git worktrees in
+  \`projects/<name>/implementation/<story-id>/<repo>/\` — both gitignored. The
+  per-story worktree workflow is wired through BMAD's customization at
+  \`_bmad/custom/bmad-dev-story.toml\` (see \`_bmad/custom/worktree-workflow.md\`);
+  do not duplicate those steps here.
 - Each project's \`$USER_DOCS_FOLDER/\` is its \`project_knowledge\` directory.
   Shared knowledge lives in \`.agents/knowledge/\`.
 AGENTMD
@@ -439,10 +488,13 @@ if [[ -f ".gitignore" ]]; then
 # Output + docs symlinks (recreated on switch)
 $USER_OUTPUT_FOLDER
 $USER_DOCS_FOLDER
-# Project source code (each project's src/ is managed independently)
-projects/*/src/
+# Source repo clones + per-story worktrees (managed independently)
+projects/*/repos/
+projects/*/implementation/
 # Project skills symlink
 .agents/skills/project
+# Personal BMAD customization overrides
+_bmad/custom/*.user.toml
 GITIGNORE
     ok "Appended bmad-router rules to .gitignore"
   fi
@@ -454,11 +506,15 @@ else
 $USER_OUTPUT_FOLDER
 $USER_DOCS_FOLDER
 
-# Project source code (each project's src/ is managed independently)
-projects/*/src/
+# Source repo clones + per-story worktrees (each managed independently)
+projects/*/repos/
+projects/*/implementation/
 
 # Project skills symlink (managed by bmad-router)
 .agents/skills/project
+
+# Personal BMAD customization overrides (team overrides are committed)
+_bmad/custom/*.user.toml
 
 # Node / BMAD installer
 node_modules/

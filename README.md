@@ -38,7 +38,7 @@ The setup script walks you through three questions: what to call the output fold
 
 ![Setup](docs/images/01-setup.png)
 
-It installs BMAD if it isn't already there, writes the folder names into `config.yaml`, creates the directory structure, and scaffolds your projects.
+It installs BMAD if it isn't already there, writes the folder names into `config.yaml`, creates the directory structure, scaffolds your projects, and installs a CI workflow (`.github/workflows/ci.yml`) that runs the bmad-router tests and shellcheck.
 
 ## What you get
 
@@ -232,6 +232,7 @@ bmad-router/
 │   └── bmad-issues.py              # GitHub Issues sync (optional)
 ├── templates/
 │   ├── .github/workflows/
+│   │   ├── ci.yml                  # Metarepo CI (pytest + shellcheck), installed into each metarepo
 │   │   └── sync-issues.yml         # GitHub Action (optional)
 │   ├── bmad-custom/                # BMAD overrides → _bmad/custom/
 │   │   ├── bmad-dev-story.toml     #   create per-story worktrees on implement

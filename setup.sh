@@ -296,6 +296,13 @@ if [[ -f "$SETUP_DIR/tests/test_bmad_router.py" ]]; then
   ok "tests/test_bmad_router.py"
 fi
 
+# Install CI workflow so the metarepo runs its own tests + shellcheck.
+if [[ -f "$SETUP_DIR/templates/.github/workflows/ci.yml" ]]; then
+  mkdir -p .github/workflows
+  cp "$SETUP_DIR/templates/.github/workflows/ci.yml" .github/workflows/ci.yml
+  ok ".github/workflows/ci.yml"
+fi
+
 # Seed shared knowledge README
 if [[ ! -f ".agents/knowledge/README.md" ]]; then
   cat > .agents/knowledge/README.md << 'KNOWLEDGEMD'

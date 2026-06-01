@@ -64,6 +64,19 @@ jobs:
             fi
           done
 
+      - name: Run the example project's CI (pytest + shellcheck)
+        env:
+          GEN_DIR: ${{ runner.temp }}/example-metarepo
+        run: |
+          set -euxo pipefail
+          cd "$GEN_DIR"
+          # Exercise the CI the generated metarepo ships (.github/workflows/ci.yml):
+          # run its test suite and lint its shell script. Gates publishing the
+          # example on these passing.
+          pip install pytest pyyaml
+          python -m pytest tests/ -q
+          shellcheck --severity=error scripts/bmad-router.sh
+
       - name: Sync example stories to GitHub Issues (showcase)
         env:
           GEN_DIR: ${{ runner.temp }}/example-metarepo

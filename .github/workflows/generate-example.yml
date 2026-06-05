@@ -18,11 +18,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  # TEMPORARY: validate the workflow end-to-end on this PR. Remove this
-  # `pull_request` trigger before merging — the example branch should only be
-  # regenerated from main / manual dispatch.
-  pull_request:
-    branches: [main]
 
 # Don't let two runs race on the example branch.
 concurrency:
@@ -88,7 +83,7 @@ jobs:
           GEN_DIR: ${{ runner.temp }}/example-metarepo
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           cd "$GEN_DIR"
           # setup.sh runs `git init` in the target dir (no commits). Discard that
           # empty repo so we start a clean history on `example`.

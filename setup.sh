@@ -455,17 +455,18 @@ if [[ -d "$SETUP_DIR/templates/bmad-custom" && -d "_bmad" ]]; then
     fi
   done
   # The bmad-custom TOMLs inject the shared context via a persistent_facts
-  # "file:" reference. They ship with the default claude-code path
-  # (.claude/knowledge/); rewrite it to the configured tool's knowledge dir so
-  # the injected path matches where setup actually seeded the file. Matches the
-  # portable `sed -i.bak` style used for config.yaml above.
-  if [[ "$KNOWLEDGE_BASE" != ".claude/knowledge" ]]; then
-    for f in bmad-dev-story.toml bmad-create-story.toml; do
-      if [[ -f "_bmad/custom/$f" ]] && grep -q "\.claude/knowledge/shared-context.md" "_bmad/custom/$f"; then
-        sed -i.bak "s|\.claude/knowledge/shared-context.md|$KNOWLEDGE_BASE/shared-context.md|g" "_bmad/custom/$f" && rm -f "_bmad/custom/$f.bak"
-      fi
-    done
-  fi
+  # "file:" reference. The committed templates use a tool-agnostic
+  # __KNOWLEDGE_DIR__ placeholder; resolve it to the configured agent tool's
+  # knowledge dir so BMAD loads the file from where setup actually seeded it.
+  # This runs on every setup invocation and rewrites whatever the placeholder
+  # currently resolves to (placeholder or a prior tool's dir), so re-running with
+  # a different agent tool repoints an already-installed override — not just the
+  # first install. Uses the portable `sed -i.bak` style used for config.yaml.
+  for f in bmad-dev-story.toml bmad-create-story.toml; do
+    if [[ -f "_bmad/custom/$f" ]] && grep -q "shared-context.md" "_bmad/custom/$f"; then
+      sed -i.bak -E "s|file:\{project-root\}/[^\"]*shared-context.md|file:{project-root}/$KNOWLEDGE_BASE/shared-context.md|g" "_bmad/custom/$f" && rm -f "_bmad/custom/$f.bak"
+    fi
+  done
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────

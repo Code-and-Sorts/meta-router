@@ -20,15 +20,15 @@ When you run `bmad-router switch food-inventory`, three symlinks at the repo roo
 
 - `features/` → `projects/food-inventory/features/` (BMAD output: PRDs, epics, stories)
 - `docs/` → `projects/food-inventory/docs/` (project knowledge: ADRs, specs)
-- `.agents/skills/project/` → `projects/food-inventory/.agents/skills/` (project-specific agent skills)
+- `.claude/skills/project/` → `projects/food-inventory/.claude/skills/` (project-specific agent skills)
 
-BMAD's workflows read and write through the symlinks without knowing they're there. The folder names come from your BMAD `config.yaml` — `output_folder` and `project_knowledge` — so if you've customized those, the router picks them up automatically.
+BMAD's workflows read and write through the symlinks without knowing they're there. The folder names come from your BMAD `config.yaml` — `output_folder` and `project_knowledge` — so if you've customized those, the router picks them up automatically. The skills directory depends on which agent tool you set up for (`agent_tool` in `config.yaml`): `.claude/skills/` for Claude Code, `.github/skills/` for GitHub Copilot, `.codex/skills/` for Codex.
 
 ## Setup
 
 Requirements: Node.js (for BMAD), git, bash.
 
-```
+```bash
 git clone <this-repo> bmad-router
 mkdir my-metarepo && cd my-metarepo
 bash /path/to/bmad-router/setup.sh .
@@ -52,7 +52,7 @@ BMAD_SETUP_NONINTERACTIVE=1 \
 
 ![Setup](docs/images/01-setup.png)
 
-It installs BMAD if it isn't already there, writes the folder names into `config.yaml`, creates the directory structure, scaffolds your projects, and installs a CI workflow (`.github/workflows/ci.yml`) that runs the bmad-router tests and shellcheck.
+Setup asks which agent tool you're targeting (Claude Code, GitHub Copilot, or Codex) so it can install BMAD's integration for that tool and place agent skills in the right directory. It installs BMAD if it isn't already there, writes the folder names and `agent_tool` into `config.yaml`, creates the directory structure, scaffolds your projects, and installs a CI workflow (`.github/workflows/ci.yml`) that runs the bmad-router tests and shellcheck.
 
 ## What you get
 
@@ -63,15 +63,15 @@ The important parts:
 - `_bmad/` is the shared BMAD core. Agents, workflows, tasks. Installed once, used by all projects.
 - `projects/<name>/features/` is where BMAD writes artifacts for that project. PRD, architecture, epics, stories, sprint status, project-context.md.
 - `projects/<name>/docs/` is project-specific knowledge that BMAD agents read as `project_knowledge`.
-- `projects/<name>/.agents/skills/` holds agent skills that only activate when that project is switched in.
+- `projects/<name>/.claude/skills/` holds agent skills that only activate when that project is switched in. (The `.claude/skills` path is the Claude Code default; it follows your `agent_tool` — `.github/skills` for Copilot, `.codex/skills` for Codex.)
 - `.agents/knowledge/` is shared documentation that's always available regardless of active project. Org standards, coding conventions, review checklists.
-- `.agents/skills/<name>/` holds always-active skills (like bmad-router itself), each a directory with a `SKILL.md`. The active project's skills are exposed via the `.agents/skills/project` symlink.
+- `.claude/skills/<name>/` holds always-active skills (like the `router-project-switch` skill itself), each a directory with a `SKILL.md`. The active project's skills are exposed via the `.claude/skills/project` symlink.
 - `projects/<name>/repos.yaml` is a tracked manifest of the project's source repos. `projects/<name>/repos/` holds their git clones and `projects/<name>/implementation/` holds per-story git worktrees — both gitignored. See [Source repos and story worktrees](#source-repos-and-story-worktrees).
 - `AGENTS.md` is the context file for AI agents. Named `AGENTS.md` rather than `CLAUDE.md` so it works with Claude Code, Copilot, Cursor, or anything else that reads a root markdown file.
 
 ## Usage
 
-```
+```bash
 bash scripts/bmad-router.sh <command>
 ```
 
@@ -99,11 +99,13 @@ The output folder defaults to `features`. The docs folder defaults to `docs`. Bo
 
 The setup script writes your choices into config.yaml, so the router reads them automatically after that.
 
+The agent tool resolves the same way — `BMAD_AGENT_TOOL` env var, then `agent_tool` in `_bmad/bmm/config.yaml`, then the `claude-code` default. It controls where agent skills live: `.claude/skills/` (Claude Code), `.github/skills/` (GitHub Copilot), or `.codex/skills/` (Codex).
+
 ## Project-specific skills
 
-Each project can have its own agent skills at `projects/<name>/.agents/skills/<skill-name>/SKILL.md`. They activate when you switch to that project and deactivate when you switch away. If your food-inventory project needs a custom recipe-parsing skill but your camera app doesn't, this keeps them separate.
+Each project can have its own agent skills at `projects/<name>/.claude/skills/<skill-name>/SKILL.md` (the skills directory follows your `agent_tool` — see below). They activate when you switch to that project and deactivate when you switch away. If your food-inventory project needs a custom recipe-parsing skill but your camera app doesn't, this keeps them separate.
 
-Always-active skills at `.agents/skills/<name>/` (like bmad-router) are available regardless of the active project.
+Always-active skills at `.claude/skills/<name>/` (like the `router-project-switch` skill) are available regardless of the active project.
 
 ## Source repos and story worktrees
 

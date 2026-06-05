@@ -23,6 +23,17 @@ step() { echo -e "\n${BOLD}[$1/$TOTAL_STEPS] $2${NC}"; }
 
 TOTAL_STEPS=9
 
+# Map an agent tool to its skills directory (relative to the metarepo root).
+# Kept in sync with skills_base_for_tool in scripts/bmad-router.sh.
+skills_base_for_tool() {
+  case "$1" in
+    claude-code)    echo ".claude/skills" ;;
+    github-copilot) echo ".github/skills" ;;
+    codex)          echo ".codex/skills" ;;
+    *)              echo ".agents/skills" ;;
+  esac
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Parse args
 # ─────────────────────────────────────────────────────────────────────────────
@@ -59,6 +70,7 @@ step 1 "Configuration"
 #                          positional arg, if given, still takes precedence)
 #   BMAD_OUTPUT_FOLDER     output folder name      (default: features)
 #   BMAD_DOCS_FOLDER       docs folder name        (default: docs)
+#   BMAD_SETUP_TOOL        agent tool              (claude-code|github-copilot|codex; default: claude-code)
 #   BMAD_SETUP_PROJECTS    comma-separated projects (default: none)
 #   BMAD_SETUP_ISSUES_SYNC y/n to enable sync       (default: n)
 if [[ "$NONINTERACTIVE" == 1 ]]; then
@@ -102,6 +114,34 @@ if [[ ! "$USER_DOCS_FOLDER" =~ ^[a-zA-Z0-9._-]+$ ]]; then
 fi
 
 ok "Docs folder: ${BOLD}$USER_DOCS_FOLDER${NC}"
+
+# Agent tool — determines which IDE/agent BMAD integrates with and, in turn,
+# where agent skills live (each tool reads them from its own directory).
+if [[ "$NONINTERACTIVE" == 1 ]]; then
+  AGENT_TOOL="${BMAD_SETUP_TOOL:-claude-code}"
+else
+  echo ""
+  echo -e "  Which agent tool are you setting up for?"
+  echo -e "  ${DIM}This selects the BMAD integration and where agent skills live.${NC}"
+  echo ""
+  echo -e "    1) Claude Code     ${DIM}(skills in .claude/skills/)${NC}"
+  echo -e "    2) GitHub Copilot  ${DIM}(skills in .github/skills/)${NC}"
+  echo -e "    3) Codex           ${DIM}(skills in .codex/skills/)${NC}"
+  echo ""
+  read -rp "  Tool [1]: " TOOL_CHOICE
+  case "$TOOL_CHOICE" in
+    2|github-copilot|copilot) AGENT_TOOL="github-copilot" ;;
+    3|codex)                  AGENT_TOOL="codex" ;;
+    *)                        AGENT_TOOL="claude-code" ;;
+  esac
+fi
+
+case "$AGENT_TOOL" in
+  claude-code|github-copilot|codex) ;;
+  *) die "Unsupported agent tool: '$AGENT_TOOL' (expected claude-code, github-copilot, or codex)" ;;
+esac
+SKILLS_BASE="$(skills_base_for_tool "$AGENT_TOOL")"
+ok "Agent tool: ${BOLD}$AGENT_TOOL${NC} ${DIM}(skills: $SKILLS_BASE/)${NC}"
 
 # Initial projects
 if [[ "$NONINTERACTIVE" == 1 ]]; then
@@ -210,7 +250,7 @@ else
   # --tools targets the IDE/agent integration (required for fresh --yes installs).
   # Override the module/tool selection via BMAD_INSTALL_MODULES / BMAD_INSTALL_TOOLS.
   BMAD_INSTALL_MODULES="${BMAD_INSTALL_MODULES:-bmm}"
-  BMAD_INSTALL_TOOLS="${BMAD_INSTALL_TOOLS:-claude-code}"
+  BMAD_INSTALL_TOOLS="${BMAD_INSTALL_TOOLS:-$AGENT_TOOL}"
   if npx bmad-method install --yes --directory . \
        --modules "$BMAD_INSTALL_MODULES" --tools "$BMAD_INSTALL_TOOLS" </dev/null; then
     ok "BMAD installed"
@@ -235,12 +275,18 @@ if [[ -f "$YAML_CFG" ]]; then
   else
     echo "project_knowledge: \"{project-root}/$USER_DOCS_FOLDER\"" >> "$YAML_CFG"
   fi
-  ok "Updated config.yaml: output_folder=$USER_OUTPUT_FOLDER, project_knowledge=$USER_DOCS_FOLDER"
+  if grep -qE '^\s*agent_tool\s*:' "$YAML_CFG" 2>/dev/null; then
+    sed -i.bak "s|^\(\s*agent_tool\s*:\).*|\1 \"$AGENT_TOOL\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
+  else
+    echo "agent_tool: \"$AGENT_TOOL\"" >> "$YAML_CFG"
+  fi
+  ok "Updated config.yaml: output_folder=$USER_OUTPUT_FOLDER, project_knowledge=$USER_DOCS_FOLDER, agent_tool=$AGENT_TOOL"
 else
   mkdir -p "$(dirname "$YAML_CFG")"
   cat > "$YAML_CFG" << YAML
 output_folder: "{project-root}/$USER_OUTPUT_FOLDER"
 project_knowledge: "{project-root}/$USER_DOCS_FOLDER"
+agent_tool: "$AGENT_TOOL"
 YAML
   ok "Created config.yaml with custom folder names"
 fi
@@ -273,13 +319,13 @@ step 5 "Creating directory structure"
 
 mkdir -p projects
 mkdir -p scripts
-mkdir -p .agents/skills/bmad-router
+mkdir -p "$SKILLS_BASE/router-project-switch"
 mkdir -p .agents/knowledge
 mkdir -p tests
 
 ok "projects/"
 ok "scripts/"
-ok ".agents/skills/ (always-active skills)"
+ok "$SKILLS_BASE/ (always-active skills)"
 ok ".agents/knowledge/ (shared across all projects)"
 ok "tests/"
 
@@ -298,8 +344,8 @@ else
 fi
 
 if [[ -f "$SETUP_DIR/SKILL.md" ]]; then
-  cp "$SETUP_DIR/SKILL.md" .agents/skills/bmad-router/SKILL.md
-  ok ".agents/skills/bmad-router/SKILL.md"
+  cp "$SETUP_DIR/SKILL.md" "$SKILLS_BASE/router-project-switch/SKILL.md"
+  ok "$SKILLS_BASE/router-project-switch/SKILL.md"
 fi
 
 if [[ -f "$SETUP_DIR/tests/test_bmad_router.py" ]]; then
@@ -426,7 +472,7 @@ Work flows through four phases. Each phase has a primary agent.
 
 Use BMAD slash commands or skill references depending on your IDE:
 - Claude Code: \`/pm\`, \`/sm\`, \`/architect\`, \`/dev\`, \`/bmad-help\`
-- Other IDEs: reference the skill files in \`.agents/skills/\`
+- Other IDEs: reference the skill files in \`$SKILLS_BASE/\`
 
 If you're unsure what to do next, ask \`bmad-help\`.
 
@@ -451,7 +497,7 @@ point to the active project:
 |---|---|---|
 | \`$USER_OUTPUT_FOLDER/\` | \`projects/<active>/$USER_OUTPUT_FOLDER/\` | PRDs, epics, stories, sprint status |
 | \`$USER_DOCS_FOLDER/\` | \`projects/<active>/$USER_DOCS_FOLDER/\` | Project knowledge (ADRs, specs) |
-| \`.agents/skills/project/\` | \`projects/<active>/.agents/skills/\` | Project-specific agent skills |
+| \`$SKILLS_BASE/project/\` | \`projects/<active>/$SKILLS_BASE/\` | Project-specific agent skills |
 
 ### Before starting any work
 
@@ -471,11 +517,12 @@ bash scripts/bmad-router.sh validate          # health check
 
 ## Agent skills
 
-Skills are organized by scope:
+This metarepo targets the **$AGENT_TOOL** agent tool, so agent skills live in
+\`$SKILLS_BASE/\`. Skills are organized by scope:
 
-- \`.agents/skills/<name>/\` — always-available skills (each is a directory with a
-  \`SKILL.md\`). Includes \`bmad-router\` and any org-wide skills.
-- \`.agents/skills/project/\` — symlink to the active project's skills.
+- \`$SKILLS_BASE/<name>/\` — always-available skills (each is a directory with a
+  \`SKILL.md\`). Includes \`router-project-switch\` and any org-wide skills.
+- \`$SKILLS_BASE/project/\` — symlink to the active project's skills.
   Only available when that project is switched in.
 - \`.agents/knowledge/\` — shared documentation available to all projects.
   Org standards, coding conventions, architecture patterns.
@@ -520,7 +567,7 @@ if [[ -f ".gitignore" ]]; then
 projects/*/repos/
 projects/*/implementation/
 # Project skills symlink
-.agents/skills/project
+$SKILLS_BASE/project
 # Personal BMAD customization overrides
 _bmad/custom/*.user.toml
 GITIGNORE
@@ -544,7 +591,7 @@ projects/*/repos/
 projects/*/implementation/
 
 # Project skills symlink (managed by bmad-router)
-.agents/skills/project
+$SKILLS_BASE/project
 
 # Personal BMAD customization overrides (team overrides are committed)
 _bmad/custom/*.user.toml
@@ -595,6 +642,7 @@ echo -e "${BOLD}╚════════════════════�
 echo ""
 echo -e "  ${DIM}Output folder: $USER_OUTPUT_FOLDER${NC}"
 echo -e "  ${DIM}Docs folder:   $USER_DOCS_FOLDER${NC}"
+echo -e "  ${DIM}Agent tool:    $AGENT_TOOL (skills: $SKILLS_BASE/)${NC}"
 if [[ ${#PROJECTS[@]} -gt 0 ]]; then
   echo -e "  ${DIM}Projects:      ${PROJECTS[*]}${NC}"
 fi

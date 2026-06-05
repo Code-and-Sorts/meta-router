@@ -1,5 +1,5 @@
 ---
-name: bmad-router
+name: router-project-switch
 description: >
   Switch the active BMAD project context in a multi-project metarepo. Use this skill whenever the
   user says "switch project", "switch to <project>", "bmad-router", "change project context",
@@ -9,7 +9,7 @@ description: >
   default), docs folder, and project-specific agent skills.
 ---
 
-# bmad-router
+# router-project-switch
 
 Manages multi-project context switching in a BMAD metarepo by routing three
 symlinks to the active project: output folder, docs, and agent skills.
@@ -22,10 +22,10 @@ metarepo/
 ├── features -> projects/X/features     # Output symlink (configurable name)
 ├── docs -> projects/X/docs             # Docs symlink (configurable name)
 ├── active-project.txt
+├── .claude/skills/                     # Agent skills — tool-specific dir (see below)
+│   ├── router-project-switch/          # Always-active skill (flat, not nested)
+│   └── project -> ...                  # Per-project skills symlink
 ├── .agents/
-│   ├── skills/
-│   │   ├── bmad-router/                # Always-active skill (flat, not nested)
-│   │   └── project -> ...              # Per-project skills symlink
 │   └── knowledge/                      # Shared docs (all projects)
 ├── projects/
 │   ├── project-a/
@@ -37,7 +37,7 @@ metarepo/
 │   │   │   ├── implementation-artifacts/
 │   │   │   └── project-context.md
 │   │   ├── docs/                       # Project knowledge
-│   │   ├── .agents/skills/             # Project-specific skills
+│   │   ├── .claude/skills/             # Project-specific skills (tool dir)
 │   │   ├── repos.yaml                  # Source repo manifest (tracked)
 │   │   ├── repos/                      # Git clones of source repos (gitignored)
 │   │   └── implementation/             # Per-story worktrees (gitignored)
@@ -53,8 +53,18 @@ metarepo/
 |---|---|---|---|
 | Output folder | `BMAD_OUTPUT_FOLDER` | `output_folder` | `features` |
 | Docs folder | `BMAD_DOCS_FOLDER` | `project_knowledge` | `docs` |
+| Agent tool | `BMAD_AGENT_TOOL` | `agent_tool` | `claude-code` |
 
 Resolution order: env var → `_bmad/bmm/config.yaml` → `_bmad/config.toml` → default.
+
+The agent tool determines where agent skills live, since each tool reads them
+from its own conventional directory:
+
+| Agent tool | Skills directory |
+|---|---|
+| `claude-code` | `.claude/skills/` |
+| `github-copilot` | `.github/skills/` |
+| `codex` | `.codex/skills/` |
 
 ## Commands
 
@@ -74,11 +84,12 @@ Resolution order: env var → `_bmad/bmm/config.yaml` → `_bmad/config.toml` �
 
 ## Project Skills
 
-Each project can have agent skills at `projects/<name>/.agents/skills/`.
-When the router switches to a project, `.agents/skills/project` symlinks
-to that project's skills directory. Always-active skills (like `bmad-router`)
-live directly at `.agents/skills/<name>/` and are available regardless of the
-active project.
+Skills live in the active agent tool's skills directory (`.claude/skills/` for
+Claude Code by default — see Config Resolution). Each project can have its own
+agent skills at `projects/<name>/<skills-dir>/`. When the router switches to a
+project, `<skills-dir>/project` symlinks to that project's skills directory.
+Always-active skills (like `router-project-switch`) live directly at
+`<skills-dir>/<name>/` and are available regardless of the active project.
 
 ## Shared Knowledge
 

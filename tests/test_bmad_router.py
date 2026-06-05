@@ -18,7 +18,8 @@ def metarepo(tmp_path: Path) -> Path:
     (tmp_path / "_bmad" / "bmm" / "agents").mkdir(parents=True)
     (tmp_path / "_bmad" / "core" / "tasks").mkdir(parents=True)
     (tmp_path / "projects").mkdir()
-    (tmp_path / ".agents" / "skills" / "bmad-router").mkdir(parents=True)
+    # Default agent tool is claude-code, so skills live in .claude/skills.
+    (tmp_path / ".claude" / "skills" / "router-project-switch").mkdir(parents=True)
     (tmp_path / ".agents" / "knowledge").mkdir(parents=True)
 
     scripts_dir = tmp_path / "scripts"
@@ -47,8 +48,8 @@ def run(metarepo, *args, expect_fail=False, env=None):
     return result
 
 
-def add_project_skill(metarepo, project, skill_name):
-    skill_dir = metarepo / "projects" / project / ".agents" / "skills" / skill_name
+def add_project_skill(metarepo, project, skill_name, skills_base=".claude/skills"):
+    skill_dir = metarepo / "projects" / project / skills_base / skill_name
     skill_dir.mkdir(parents=True, exist_ok=True)
     (skill_dir / "SKILL.md").write_text(f"# {skill_name}\n")
     return skill_dir
@@ -116,7 +117,7 @@ class TestInit:
 
     def test_scaffolds_skills_dir(self, metarepo):
         run(metarepo, "init", "alpha")
-        assert (metarepo / "projects" / "alpha" / ".agents" / "skills").is_dir()
+        assert (metarepo / "projects" / "alpha" / ".claude" / "skills").is_dir()
 
     def test_seeds_project_context(self, metarepo):
         run(metarepo, "init", "alpha")
@@ -268,7 +269,7 @@ class TestSwitch:
 
     def test_creates_skills_symlink(self, metarepo):
         run(metarepo, "init", "alpha")
-        link = metarepo / ".agents" / "skills" / "project"
+        link = metarepo / ".claude" / "skills" / "project"
         assert link.is_symlink()
 
     def test_creates_repos_and_implementation_symlinks(self, metarepo):
@@ -289,7 +290,7 @@ class TestSwitch:
         run(metarepo, "switch", "alpha")
         assert os.readlink(metarepo / "features") == "projects/alpha/features"
         assert os.readlink(metarepo / "docs") == "projects/alpha/docs"
-        assert "alpha" in os.readlink(metarepo / ".agents" / "skills" / "project")
+        assert "alpha" in os.readlink(metarepo / ".claude" / "skills" / "project")
 
     def test_updates_active_project_file(self, metarepo):
         run(metarepo, "init", "alpha")
@@ -385,7 +386,7 @@ class TestSkillsRouting:
         add_project_skill(metarepo, "beta", "beta-db")
 
         run(metarepo, "switch", "alpha")
-        link = metarepo / ".agents" / "skills" / "project"
+        link = metarepo / ".claude" / "skills" / "project"
         assert (link / "alpha-api" / "SKILL.md").exists()
         assert not (link / "beta-db").exists()
 
@@ -401,8 +402,8 @@ class TestSkillsRouting:
         assert "2 project skill(s)" in result.stdout
 
     def test_always_active_skills_unaffected(self, metarepo):
-        """A flat always-active skill (.agents/skills/<name>/) survives switching."""
-        always_on = metarepo / ".agents" / "skills" / "org-standards" / "SKILL.md"
+        """A flat always-active skill (.claude/skills/<name>/) survives switching."""
+        always_on = metarepo / ".claude" / "skills" / "org-standards" / "SKILL.md"
         always_on.parent.mkdir(parents=True, exist_ok=True)
         always_on.write_text("# Org standards")
         run(metarepo, "init", "alpha")
@@ -416,6 +417,44 @@ class TestSkillsRouting:
         run(metarepo, "init", "beta")
         result = run(metarepo, "list")
         assert "1 skill(s)" in result.stdout
+
+
+# ── Agent tool → skills directory ────────────────────────────────────────────
+
+class TestAgentTool:
+    def test_copilot_tool_uses_github_skills_dir(self, metarepo):
+        (metarepo / "_bmad" / "bmm" / "config.yaml").write_text(
+            'agent_tool: "github-copilot"\n'
+        )
+        run(metarepo, "init", "alpha")
+        assert (metarepo / "projects" / "alpha" / ".github" / "skills").is_dir()
+        link = metarepo / ".github" / "skills" / "project"
+        assert link.is_symlink()
+        assert not (metarepo / ".claude" / "skills" / "project").exists()
+
+    def test_codex_tool_via_env(self, metarepo):
+        run(metarepo, "init", "alpha", env={"BMAD_AGENT_TOOL": "codex"})
+        assert (metarepo / "projects" / "alpha" / ".codex" / "skills").is_dir()
+        assert (metarepo / ".codex" / "skills" / "project").is_symlink()
+
+    def test_env_beats_config(self, metarepo):
+        (metarepo / "_bmad" / "bmm" / "config.yaml").write_text(
+            'agent_tool: "github-copilot"\n'
+        )
+        run(metarepo, "init", "alpha", env={"BMAD_AGENT_TOOL": "codex"})
+        assert (metarepo / ".codex" / "skills" / "project").is_symlink()
+        assert not (metarepo / ".github" / "skills" / "project").exists()
+
+    def test_unknown_tool_falls_back_to_agents(self, metarepo):
+        run(metarepo, "init", "alpha", env={"BMAD_AGENT_TOOL": "mystery-ide"})
+        assert (metarepo / ".agents" / "skills" / "project").is_symlink()
+        assert (metarepo / "projects" / "alpha" / ".agents" / "skills").is_dir()
+
+    def test_config_reports_tool(self, metarepo):
+        run(metarepo, "init", "alpha", env={"BMAD_AGENT_TOOL": "github-copilot"})
+        result = run(metarepo, "config", env={"BMAD_AGENT_TOOL": "github-copilot"})
+        assert "github-copilot" in result.stdout
+        assert ".github/skills" in result.stdout
 
 
 # ── List / Current ───────────────────────────────────────────────────────────
@@ -605,7 +644,7 @@ class TestEdgeCases:
         for link in [
             metarepo / "features", metarepo / "docs",
             metarepo / "repos", metarepo / "implementation",
-            metarepo / ".agents" / "skills" / "project",
+            metarepo / ".claude" / "skills" / "project",
         ]:
             assert not os.path.isabs(os.readlink(link)), f"{link} should be relative"
 

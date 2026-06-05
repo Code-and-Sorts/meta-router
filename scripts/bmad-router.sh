@@ -9,7 +9,10 @@ set -euo pipefail
 #   2. Project docs  (project_knowledge — ADRs, specs, domain docs)
 #   3. Project skills (agent skills specific to one project)
 #
-# Shared knowledge lives at .agents/knowledge/ and is always available.
+# Agent skills live in the active tool's conventional directory (.claude/skills
+# for Claude Code, .github/skills for GitHub Copilot, .codex/skills for Codex),
+# resolved from the agent_tool config value. Shared knowledge lives at
+# .agents/knowledge/ and is always available.
 # ─────────────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,8 +22,13 @@ BMAD_CORE="$REPO_ROOT/_bmad"
 PROJECTS_DIR="$REPO_ROOT/projects"
 ACTIVE_FILE="$REPO_ROOT/active-project.txt"
 AGENTS_DIR="$REPO_ROOT/.agents"
-SKILLS_DIR="$AGENTS_DIR/skills"
-SKILLS_PROJECT_LINK="$SKILLS_DIR/project"
+
+# Skills location depends on the agent tool the metarepo targets. Both the
+# relative base (SKILLS_BASE, e.g. ".claude/skills") and the absolute paths are
+# resolved in check_metarepo from config; see skills_base_for_tool.
+SKILLS_BASE=""
+SKILLS_DIR=""
+SKILLS_PROJECT_LINK=""
 
 # Colors
 RED='\033[0;31m'
@@ -111,14 +119,31 @@ resolve_config_value() {
   echo "$default"
 }
 
+# Map the configured agent tool to its skills directory, relative to the repo
+# root. Each agent reads agent skills from a different conventional location;
+# an unrecognized tool falls back to the tool-agnostic .agents/skills.
+skills_base_for_tool() {
+  case "$1" in
+    claude-code)    echo ".claude/skills" ;;
+    github-copilot) echo ".github/skills" ;;
+    codex)          echo ".codex/skills" ;;
+    *)              echo ".agents/skills" ;;
+  esac
+}
+
 OUTPUT_FOLDER_NAME=""
 DOCS_FOLDER_NAME=""
+AGENT_TOOL=""
 
 check_metarepo() {
   [[ -d "$BMAD_CORE" ]] || die "Not in a BMAD metarepo — _bmad/ directory not found at $REPO_ROOT"
   [[ -d "$PROJECTS_DIR" ]] || die "No projects/ directory found at $REPO_ROOT"
   OUTPUT_FOLDER_NAME="$(resolve_config_value BMAD_OUTPUT_FOLDER output_folder features)"
   DOCS_FOLDER_NAME="$(resolve_config_value BMAD_DOCS_FOLDER project_knowledge docs)"
+  AGENT_TOOL="$(resolve_config_value BMAD_AGENT_TOOL agent_tool claude-code)"
+  SKILLS_BASE="$(skills_base_for_tool "$AGENT_TOOL")"
+  SKILLS_DIR="$REPO_ROOT/$SKILLS_BASE"
+  SKILLS_PROJECT_LINK="$SKILLS_DIR/project"
 }
 
 # Computed paths
@@ -128,7 +153,7 @@ repos_symlink()   { echo "$REPO_ROOT/repos"; }
 impl_symlink()    { echo "$REPO_ROOT/implementation"; }
 project_output()     { echo "$PROJECTS_DIR/$1/$OUTPUT_FOLDER_NAME"; }
 project_docs()       { echo "$PROJECTS_DIR/$1/$DOCS_FOLDER_NAME"; }
-project_skills()     { echo "$PROJECTS_DIR/$1/.agents/skills"; }
+project_skills()     { echo "$PROJECTS_DIR/$1/$SKILLS_BASE"; }
 project_repos_yaml() { echo "$PROJECTS_DIR/$1/repos.yaml"; }
 project_repos_dir()  { echo "$PROJECTS_DIR/$1/repos"; }
 project_impl_dir()   { echo "$PROJECTS_DIR/$1/implementation"; }
@@ -175,9 +200,11 @@ list_projects() {
     name="$(basename "$dir")"
     local markers=""
     # Skill count
-    if [[ -d "$PROJECTS_DIR/$name/.agents/skills" ]]; then
+    local pskills
+    pskills="$(project_skills "$name")"
+    if [[ -d "$pskills" ]]; then
       local skill_count
-      skill_count=$(find "$PROJECTS_DIR/$name/.agents/skills" -name 'SKILL.md' 2>/dev/null | wc -l | tr -d '[:space:]')
+      skill_count=$(find "$pskills" -name 'SKILL.md' 2>/dev/null | wc -l | tr -d '[:space:]')
       if (( skill_count > 0 )); then
         markers+=" ${DIM}[${skill_count} skill(s)]${NC}"
       fi
@@ -274,7 +301,7 @@ TMPL
 
   # Seed skills README
   if [[ -z "$(ls -A "$skills_dir" 2>/dev/null)" ]]; then
-    cat > "$skills_dir/README.md" << 'TMPL'
+    cat > "$skills_dir/README.md" << TMPL
 # Project Skills
 
 Place agent skill folders here. Each skill should be a directory with a
@@ -282,7 +309,7 @@ SKILL.md file. These skills are only active when this project is the
 active bmad-router context.
 
 Example:
-  .agents/skills/
+  projects/${project_name}/${SKILLS_BASE}/
     my-api-skill/
       SKILL.md
 TMPL
@@ -391,11 +418,11 @@ switch_all_symlinks() {
   if [[ -L "$SKILLS_PROJECT_LINK" ]]; then
     rm "$SKILLS_PROJECT_LINK"
   elif [[ -e "$SKILLS_PROJECT_LINK" ]]; then
-    warn ".agents/skills/project is not a symlink — skipping skills switch"
+    warn "$SKILLS_BASE/project is not a symlink — skipping skills switch"
     return
   fi
   if [[ -d "$(project_skills "$project_name")" ]]; then
-    ln -s "../../projects/$project_name/.agents/skills" "$SKILLS_PROJECT_LINK"
+    ln -s "../../projects/$project_name/$SKILLS_BASE" "$SKILLS_PROJECT_LINK"
   fi
 }
 
@@ -531,7 +558,7 @@ cmd_current() {
   if [[ -L "$SKILLS_PROJECT_LINK" ]]; then
     local skill_count
     skill_count=$(find "$SKILLS_PROJECT_LINK" -name 'SKILL.md' 2>/dev/null | wc -l | tr -d '[:space:]')
-    echo -e "  ${DIM}skills: .agents/skills/project ($skill_count skill(s))${NC}"
+    echo -e "  ${DIM}skills: $SKILLS_BASE/project ($skill_count skill(s))${NC}"
   else
     echo -e "  ${DIM}skills: no project-specific skills${NC}"
   fi
@@ -759,6 +786,16 @@ cmd_config() {
   echo ""
   echo -e "  output folder:       ${GREEN}$OUTPUT_FOLDER_NAME${NC}"
   echo -e "  docs folder:         ${GREEN}$DOCS_FOLDER_NAME${NC}"
+  echo -e "  agent tool:          ${GREEN}$AGENT_TOOL${NC} ${DIM}(skills: $SKILLS_BASE/)${NC}"
+
+  # Source for agent tool
+  if [[ -n "${BMAD_AGENT_TOOL:-}" ]]; then
+    echo -e "  tool source:         ${DIM}BMAD_AGENT_TOOL env var${NC}"
+  elif [[ -f "$BMAD_CORE/bmm/config.yaml" ]] && grep -qE '^\s*agent_tool\s*:' "$BMAD_CORE/bmm/config.yaml" 2>/dev/null; then
+    echo -e "  tool source:         ${DIM}_bmad/bmm/config.yaml${NC}"
+  else
+    echo -e "  tool source:         ${DIM}default${NC}"
+  fi
 
   # Source for output folder
   if [[ -n "${BMAD_OUTPUT_FOLDER:-}" ]]; then
@@ -822,7 +859,7 @@ cmd_validate() {
   local errors=0
 
   echo -e "${BOLD}Validating BMAD metarepo...${NC}"
-  echo -e "${DIM}  output: $OUTPUT_FOLDER_NAME | docs: $DOCS_FOLDER_NAME${NC}"
+  echo -e "${DIM}  output: $OUTPUT_FOLDER_NAME | docs: $DOCS_FOLDER_NAME | tool: $AGENT_TOOL (skills: $SKILLS_BASE/)${NC}"
   echo ""
 
   [[ -d "$BMAD_CORE" ]]    && ok "_bmad/" || { warn "_bmad/ missing"; ((errors++)); }
@@ -870,14 +907,14 @@ cmd_validate() {
   # Skills symlink
   if [[ -L "$SKILLS_PROJECT_LINK" ]]; then
     if [[ -d "$SKILLS_PROJECT_LINK" ]]; then
-      ok ".agents/skills/project symlink (valid)"
+      ok "$SKILLS_BASE/project symlink (valid)"
     else
-      warn ".agents/skills/project symlink (BROKEN)"; ((errors++))
+      warn "$SKILLS_BASE/project symlink (BROKEN)"; ((errors++))
     fi
   elif [[ -e "$SKILLS_PROJECT_LINK" ]]; then
-    warn ".agents/skills/project is not a symlink"; ((errors++))
+    warn "$SKILLS_BASE/project is not a symlink"; ((errors++))
   else
-    info ".agents/skills/project not set (no project skills)"
+    info "$SKILLS_BASE/project not set (no project skills)"
   fi
 
   # active-project.txt
@@ -960,7 +997,7 @@ cmd_help() {
     <docs-folder>              → projects/<active>/<docs-folder>
     repos                      → projects/<active>/repos
     implementation             → projects/<active>/implementation
-    .agents/skills/project     → projects/<active>/.agents/skills
+    $SKILLS_BASE/project   → projects/<active>/$SKILLS_BASE
 
   SOURCE REPOS + WORKTREES
     repos.yaml                 Tracked manifest of the project's source repos
@@ -970,6 +1007,9 @@ cmd_help() {
   CONFIG RESOLUTION (first match wins for each)
     Output folder:  BMAD_OUTPUT_FOLDER env → config.yaml output_folder → "features"
     Docs folder:    BMAD_DOCS_FOLDER env → config.yaml project_knowledge → "docs"
+    Agent tool:     BMAD_AGENT_TOOL env → config.yaml agent_tool → "claude-code"
+                    (claude-code→.claude/skills, github-copilot→.github/skills,
+                     codex→.codex/skills)
 
   EXAMPLES
     bmad-router init food-inventory

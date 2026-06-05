@@ -1029,7 +1029,7 @@ cmd_help() {
     bmad-router <command> [args]
 
   COMMANDS
-    switch <project>            Switch active project (output + docs + skills)
+    switch <project>            Switch active project (output + docs + repos + implementation + skills)
     list                        List all projects (with skill counts)
     current                     Show currently active project
     init <project>              Scaffold and switch to a new project

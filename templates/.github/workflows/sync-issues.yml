@@ -51,7 +51,7 @@ jobs:
             echo "projects=$INPUT_PROJECT" >> "$GITHUB_OUTPUT"
           else
             # Find which projects had sprint-status.yaml changes
-            CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'projects/**/sprint-status.yaml' \
+            CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'projects/**/implementation-artifacts/sprint-status.yaml' \
               | sed 's|^projects/||' | cut -d/ -f1 | sort -u | tr '\n' ' ')
             echo "projects=$CHANGED" >> "$GITHUB_OUTPUT"
           fi

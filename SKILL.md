@@ -22,10 +22,10 @@ metarepo/
 ├── features -> projects/X/features     # Output symlink (configurable name)
 ├── docs -> projects/X/docs             # Docs symlink (configurable name)
 ├── active-project.txt
-├── .claude/skills/                     # Agent skills — tool-specific dir (see below)
-│   ├── router-project-switch/          # Always-active skill (flat, not nested)
-│   └── project -> ...                  # Per-project skills symlink
-├── .agents/
+├── .claude/                            # Agent tool home — tool-specific dir (see below)
+│   ├── skills/
+│   │   ├── router-project-switch/      # Always-active skill (flat, not nested)
+│   │   └── project -> ...              # Per-project skills symlink
 │   └── knowledge/                      # Shared docs (all projects)
 ├── projects/
 │   ├── project-a/
@@ -57,14 +57,17 @@ metarepo/
 
 Resolution order: env var → `_bmad/bmm/config.yaml` → `_bmad/config.toml` → default.
 
-The agent tool determines where agent skills live, since each tool reads them
-from its own conventional directory:
+The agent tool determines its home directory, under which both agent skills
+(`skills/`) and shared knowledge (`knowledge/`) live, since each tool reads them
+from its own conventional location:
 
-| Agent tool | Skills directory |
-|---|---|
-| `claude-code` | `.claude/skills/` |
-| `github-copilot` | `.github/skills/` |
-| `codex` | `.codex/skills/` |
+| Agent tool | Home dir | Skills | Shared knowledge |
+|---|---|---|---|
+| `claude-code` | `.claude/` | `.claude/skills/` | `.claude/knowledge/` |
+| `github-copilot` | `.github/` | `.github/skills/` | `.github/knowledge/` |
+| `codex` | `.codex/` | `.codex/skills/` | `.codex/knowledge/` |
+
+An unrecognized tool falls back to the tool-agnostic `.agents/` home.
 
 ## Commands
 
@@ -93,8 +96,9 @@ Always-active skills (like `router-project-switch`) live directly at
 
 ## Shared Knowledge
 
-`.agents/knowledge/` contains documentation that applies across all projects
-(org standards, shared patterns, review checklists). Always available.
+The agent tool's `knowledge/` directory (`.claude/knowledge/` for Claude Code by
+default — see Config Resolution) contains documentation that applies across all
+projects (org standards, shared patterns, review checklists). Always available.
 
 ## Source Repos and Worktrees
 

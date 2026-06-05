@@ -23,14 +23,15 @@ step() { echo -e "\n${BOLD}[$1/$TOTAL_STEPS] $2${NC}"; }
 
 TOTAL_STEPS=9
 
-# Map an agent tool to its skills directory (relative to the metarepo root).
-# Kept in sync with skills_base_for_tool in scripts/bmad-router.sh.
-skills_base_for_tool() {
+# Map an agent tool to its home directory (relative to the metarepo root). Skills
+# and shared knowledge live under it (skills/ and knowledge/). Kept in sync with
+# tool_dir_for_tool in scripts/bmad-router.sh.
+tool_dir_for_tool() {
   case "$1" in
-    claude-code)    echo ".claude/skills" ;;
-    github-copilot) echo ".github/skills" ;;
-    codex)          echo ".codex/skills" ;;
-    *)              echo ".agents/skills" ;;
+    claude-code)    echo ".claude" ;;
+    github-copilot) echo ".github" ;;
+    codex)          echo ".codex" ;;
+    *)              echo ".agents" ;;
   esac
 }
 
@@ -140,8 +141,10 @@ case "$AGENT_TOOL" in
   claude-code|github-copilot|codex) ;;
   *) die "Unsupported agent tool: '$AGENT_TOOL' (expected claude-code, github-copilot, or codex)" ;;
 esac
-SKILLS_BASE="$(skills_base_for_tool "$AGENT_TOOL")"
-ok "Agent tool: ${BOLD}$AGENT_TOOL${NC} ${DIM}(skills: $SKILLS_BASE/)${NC}"
+TOOL_DIR="$(tool_dir_for_tool "$AGENT_TOOL")"
+SKILLS_BASE="$TOOL_DIR/skills"
+KNOWLEDGE_BASE="$TOOL_DIR/knowledge"
+ok "Agent tool: ${BOLD}$AGENT_TOOL${NC} ${DIM}(skills: $SKILLS_BASE/, knowledge: $KNOWLEDGE_BASE/)${NC}"
 
 # Initial projects
 if [[ "$NONINTERACTIVE" == 1 ]]; then
@@ -270,6 +273,20 @@ if [[ -f "$YAML_CFG" ]]; then
   else
     echo "output_folder: \"{project-root}/$USER_OUTPUT_FOLDER\"" >> "$YAML_CFG"
   fi
+  # BMAD's planning_artifacts / implementation_artifacts keys point into the
+  # output folder (they default to the {project-root}/_bmad-output/* paths), so
+  # repoint them at the chosen output folder too — otherwise BMAD writes those
+  # artifacts to _bmad-output/ while the router routes the renamed folder.
+  if grep -qE '^\s*planning_artifacts\s*:' "$YAML_CFG" 2>/dev/null; then
+    sed -i.bak "s|^\(\s*planning_artifacts\s*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER/planning-artifacts\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
+  else
+    echo "planning_artifacts: \"{project-root}/$USER_OUTPUT_FOLDER/planning-artifacts\"" >> "$YAML_CFG"
+  fi
+  if grep -qE '^\s*implementation_artifacts\s*:' "$YAML_CFG" 2>/dev/null; then
+    sed -i.bak "s|^\(\s*implementation_artifacts\s*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER/implementation-artifacts\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
+  else
+    echo "implementation_artifacts: \"{project-root}/$USER_OUTPUT_FOLDER/implementation-artifacts\"" >> "$YAML_CFG"
+  fi
   if grep -qE '^\s*project_knowledge\s*:' "$YAML_CFG" 2>/dev/null; then
     sed -i.bak "s|^\(\s*project_knowledge\s*:\).*|\1 \"{project-root}/$USER_DOCS_FOLDER\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
   else
@@ -285,6 +302,8 @@ else
   mkdir -p "$(dirname "$YAML_CFG")"
   cat > "$YAML_CFG" << YAML
 output_folder: "{project-root}/$USER_OUTPUT_FOLDER"
+planning_artifacts: "{project-root}/$USER_OUTPUT_FOLDER/planning-artifacts"
+implementation_artifacts: "{project-root}/$USER_OUTPUT_FOLDER/implementation-artifacts"
 project_knowledge: "{project-root}/$USER_DOCS_FOLDER"
 agent_tool: "$AGENT_TOOL"
 YAML
@@ -320,14 +339,12 @@ step 5 "Creating directory structure"
 mkdir -p projects
 mkdir -p scripts
 mkdir -p "$SKILLS_BASE/router-project-switch"
-mkdir -p .agents/knowledge
-mkdir -p tests
+mkdir -p "$KNOWLEDGE_BASE"
 
 ok "projects/"
 ok "scripts/"
 ok "$SKILLS_BASE/ (always-active skills)"
-ok ".agents/knowledge/ (shared across all projects)"
-ok "tests/"
+ok "$KNOWLEDGE_BASE/ (shared across all projects)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 6: Copy bmad-router files
@@ -348,12 +365,7 @@ if [[ -f "$SETUP_DIR/SKILL.md" ]]; then
   ok "$SKILLS_BASE/router-project-switch/SKILL.md"
 fi
 
-if [[ -f "$SETUP_DIR/tests/test_bmad_router.py" ]]; then
-  cp "$SETUP_DIR/tests/test_bmad_router.py" tests/
-  ok "tests/test_bmad_router.py"
-fi
-
-# Install CI workflow so the metarepo runs its own tests + shellcheck.
+# Install CI workflow so the metarepo lints its bundled shell script.
 if [[ -f "$SETUP_DIR/templates/.github/workflows/ci.yml" ]]; then
   mkdir -p .github/workflows
   cp "$SETUP_DIR/templates/.github/workflows/ci.yml" .github/workflows/ci.yml
@@ -361,8 +373,8 @@ if [[ -f "$SETUP_DIR/templates/.github/workflows/ci.yml" ]]; then
 fi
 
 # Seed shared knowledge README
-if [[ ! -f ".agents/knowledge/README.md" ]]; then
-  cat > .agents/knowledge/README.md << 'KNOWLEDGEMD'
+if [[ ! -f "$KNOWLEDGE_BASE/README.md" ]]; then
+  cat > "$KNOWLEDGE_BASE/README.md" << 'KNOWLEDGEMD'
 # Shared Knowledge
 
 Documentation and conventions that apply across all projects in this metarepo.
@@ -373,7 +385,7 @@ Examples:
   - architecture-patterns.md — Approved patterns and anti-patterns
   - review-checklist.md — PR review requirements
 KNOWLEDGEMD
-  ok ".agents/knowledge/README.md"
+  ok "$KNOWLEDGE_BASE/README.md"
 fi
 
 # Install BMAD customization overrides that drive per-story git worktrees.
@@ -416,12 +428,6 @@ if [[ "$ENABLE_ISSUES" == true ]]; then
         ok "projects/$project/github-sync.yaml (edit repo field)"
       fi
     done
-  fi
-
-  # Copy test
-  if [[ -f "$SETUP_DIR/tests/test_bmad_issues.py" ]]; then
-    cp "$SETUP_DIR/tests/test_bmad_issues.py" tests/
-    ok "tests/test_bmad_issues.py"
   fi
 
   echo ""
@@ -524,7 +530,7 @@ This metarepo targets the **$AGENT_TOOL** agent tool, so agent skills live in
   \`SKILL.md\`). Includes \`router-project-switch\` and any org-wide skills.
 - \`$SKILLS_BASE/project/\` — symlink to the active project's skills.
   Only available when that project is switched in.
-- \`.agents/knowledge/\` — shared documentation available to all projects.
+- \`$KNOWLEDGE_BASE/\` — shared documentation available to all projects.
   Org standards, coding conventions, architecture patterns.
 
 When resolving a skill reference, check the always-available skills first, then
@@ -543,7 +549,7 @@ the active project's \`project/\` skills.
   \`_bmad/custom/bmad-dev-story.toml\` (see \`_bmad/custom/worktree-workflow.md\`);
   do not duplicate those steps here.
 - Each project's \`$USER_DOCS_FOLDER/\` is its \`project_knowledge\` directory.
-  Shared knowledge lives in \`.agents/knowledge/\`.
+  Shared knowledge lives in \`$KNOWLEDGE_BASE/\`.
 AGENTMD
   ok "AGENTS.md"
 fi

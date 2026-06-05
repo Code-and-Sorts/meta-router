@@ -9,10 +9,10 @@ set -euo pipefail
 #   2. Project docs  (project_knowledge — ADRs, specs, domain docs)
 #   3. Project skills (agent skills specific to one project)
 #
-# Agent skills live in the active tool's conventional directory (.claude/skills
-# for Claude Code, .github/skills for GitHub Copilot, .codex/skills for Codex),
-# resolved from the agent_tool config value. Shared knowledge lives at
-# .agents/knowledge/ and is always available.
+# Agent skills and shared knowledge live in the active tool's home directory
+# (.claude for Claude Code, .github for GitHub Copilot, .codex for Codex),
+# resolved from the agent_tool config value: <tool>/skills/ for skills and
+# <tool>/knowledge/ for shared knowledge, the latter always available.
 # ─────────────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,12 +21,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BMAD_CORE="$REPO_ROOT/_bmad"
 PROJECTS_DIR="$REPO_ROOT/projects"
 ACTIVE_FILE="$REPO_ROOT/active-project.txt"
-AGENTS_DIR="$REPO_ROOT/.agents"
 
-# Skills location depends on the agent tool the metarepo targets. Both the
-# relative base (SKILLS_BASE, e.g. ".claude/skills") and the absolute paths are
-# resolved in check_metarepo from config; see skills_base_for_tool.
+# Skills and shared knowledge live under the agent tool's home directory
+# (TOOL_DIR, e.g. ".claude"). The relative bases (SKILLS_BASE, KNOWLEDGE_BASE)
+# and absolute paths are resolved in check_metarepo from config; see
+# tool_dir_for_tool.
+TOOL_DIR=""
 SKILLS_BASE=""
+KNOWLEDGE_BASE=""
 SKILLS_DIR=""
 SKILLS_PROJECT_LINK=""
 
@@ -119,15 +121,16 @@ resolve_config_value() {
   echo "$default"
 }
 
-# Map the configured agent tool to its skills directory, relative to the repo
-# root. Each agent reads agent skills from a different conventional location;
-# an unrecognized tool falls back to the tool-agnostic .agents/skills.
-skills_base_for_tool() {
+# Map the configured agent tool to its home directory, relative to the repo
+# root. Agent skills and shared knowledge live under this directory (skills/
+# and knowledge/). Each agent reads from a different conventional location; an
+# unrecognized tool falls back to the tool-agnostic .agents.
+tool_dir_for_tool() {
   case "$1" in
-    claude-code)    echo ".claude/skills" ;;
-    github-copilot) echo ".github/skills" ;;
-    codex)          echo ".codex/skills" ;;
-    *)              echo ".agents/skills" ;;
+    claude-code)    echo ".claude" ;;
+    github-copilot) echo ".github" ;;
+    codex)          echo ".codex" ;;
+    *)              echo ".agents" ;;
   esac
 }
 
@@ -141,7 +144,9 @@ check_metarepo() {
   OUTPUT_FOLDER_NAME="$(resolve_config_value BMAD_OUTPUT_FOLDER output_folder features)"
   DOCS_FOLDER_NAME="$(resolve_config_value BMAD_DOCS_FOLDER project_knowledge docs)"
   AGENT_TOOL="$(resolve_config_value BMAD_AGENT_TOOL agent_tool claude-code)"
-  SKILLS_BASE="$(skills_base_for_tool "$AGENT_TOOL")"
+  TOOL_DIR="$(tool_dir_for_tool "$AGENT_TOOL")"
+  SKILLS_BASE="$TOOL_DIR/skills"
+  KNOWLEDGE_BASE="$TOOL_DIR/knowledge"
   SKILLS_DIR="$REPO_ROOT/$SKILLS_BASE"
   SKILLS_PROJECT_LINK="$SKILLS_DIR/project"
 }
@@ -295,7 +300,7 @@ TMPL
 Place project documentation here: ADRs, API specs, domain glossary,
 onboarding guides, etc. BMAD agents read this directory as project_knowledge.
 
-Shared knowledge that applies to all projects lives at \`.agents/knowledge/\`.
+Shared knowledge that applies to all projects lives at \`${KNOWLEDGE_BASE}/\`.
 TMPL
   fi
 
@@ -864,14 +869,14 @@ cmd_validate() {
 
   [[ -d "$BMAD_CORE" ]]    && ok "_bmad/" || { warn "_bmad/ missing"; ((errors++)); }
   [[ -d "$PROJECTS_DIR" ]] && ok "projects/" || { warn "projects/ missing"; ((errors++)); }
-  [[ -d "$AGENTS_DIR" ]]   && ok ".agents/" || { warn ".agents/ missing"; ((errors++)); }
+  [[ -d "$REPO_ROOT/$TOOL_DIR" ]] && ok "$TOOL_DIR/ (agent tool home)" || { warn "$TOOL_DIR/ missing"; ((errors++)); }
   [[ -f "$REPO_ROOT/AGENTS.md" ]] && ok "AGENTS.md" || { warn "AGENTS.md missing"; ((errors++)); }
 
   # Shared knowledge
-  if [[ -d "$AGENTS_DIR/knowledge" ]]; then
-    ok ".agents/knowledge/ (shared)"
+  if [[ -d "$REPO_ROOT/$KNOWLEDGE_BASE" ]]; then
+    ok "$KNOWLEDGE_BASE/ (shared)"
   else
-    info ".agents/knowledge/ not found (optional)"
+    info "$KNOWLEDGE_BASE/ not found (optional)"
   fi
 
   # Output symlink

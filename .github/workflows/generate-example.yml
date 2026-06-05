@@ -71,17 +71,16 @@ jobs:
             fi
           done
 
-      - name: Run the example project's CI (pytest + shellcheck)
+      - name: Run the example project's CI (shellcheck)
         env:
           GEN_DIR: ${{ runner.temp }}/example-metarepo
         run: |
           set -euxo pipefail
           cd "$GEN_DIR"
           # Exercise the CI the generated metarepo ships (.github/workflows/ci.yml):
-          # run its test suite and lint its shell script. Gates publishing the
-          # example on these passing.
-          pip install pytest pyyaml
-          python -m pytest tests/ -q
+          # lint its bundled router shell script. Gates publishing the example on
+          # this passing. (The router's own pytest suite lives in this source repo,
+          # not in generated metarepos, and is run by this repo's own ci.yml.)
           shellcheck --severity=error scripts/bmad-router.sh
 
       - name: Force-push generated tree to example branch

@@ -1,8 +1,8 @@
 name: CI
 
 # CI for a bmad-router metarepo. Installed by setup.sh into the metarepo's
-# .github/workflows/. Runs the bmad-router test suite and lints the shell script
-# on every pull request and on pushes to main.
+# .github/workflows/. Lints the bundled router shell script on every pull
+# request and on pushes to main.
 
 on:
   pull_request:
@@ -10,29 +10,6 @@ on:
     branches: [main]
 
 jobs:
-  test:
-    name: pytest (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.11', '3.12']
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: pip install pytest pyyaml
-
-      - name: Run tests
-        run: pytest tests/ -v
-
   shellcheck:
     name: shellcheck
     runs-on: ubuntu-latest

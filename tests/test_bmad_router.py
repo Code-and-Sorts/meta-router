@@ -18,9 +18,10 @@ def metarepo(tmp_path: Path) -> Path:
     (tmp_path / "_bmad" / "bmm" / "agents").mkdir(parents=True)
     (tmp_path / "_bmad" / "core" / "tasks").mkdir(parents=True)
     (tmp_path / "projects").mkdir()
-    # Default agent tool is claude-code, so skills live in .claude/skills.
+    # Default agent tool is claude-code, so skills and shared knowledge live
+    # under the .claude home directory.
     (tmp_path / ".claude" / "skills" / "router-project-switch").mkdir(parents=True)
-    (tmp_path / ".agents" / "knowledge").mkdir(parents=True)
+    (tmp_path / ".claude" / "knowledge").mkdir(parents=True)
 
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir()
@@ -513,10 +514,11 @@ class TestValidate:
         result = run(metarepo, "validate")
         assert "docs symlink" in result.stdout
 
-    def test_checks_agents_dir(self, metarepo):
+    def test_checks_tool_home_dir(self, metarepo):
         run(metarepo, "init", "alpha")
         result = run(metarepo, "validate")
-        assert ".agents/" in result.stdout
+        assert ".claude/ (agent tool home)" in result.stdout
+        assert ".claude/knowledge/ (shared)" in result.stdout
 
     def test_checks_agent_md(self, metarepo):
         os.remove(metarepo / "AGENTS.md")

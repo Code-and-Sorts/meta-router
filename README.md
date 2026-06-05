@@ -47,6 +47,8 @@ BMAD_SETUP_NONINTERACTIVE=1 \
 | `repos/` | `projects/<project>/repos/` |
 | `implementation/` | `projects/<project>/implementation/` |
 
+Context comes in two tiers: **overall shared context** (`<tool-home>/knowledge/shared-context.md`) holds org-wide standards that apply to every project and is global — it does *not* change on switch; each project's **`project-context.md`** holds its own conventions and overrides the shared context on conflict. Agents read both before every workflow (BMAD loads the shared one via `_bmad/custom/` `persistent_facts`).
+
 ## Layout
 
 ![File structure](docs/images/02-tree.png)
@@ -57,6 +59,7 @@ BMAD_SETUP_NONINTERACTIVE=1 \
 - `projects/<name>/<tool-home>/skills/` — agent skills that activate only when the project is switched in.
 - `<tool-home>/skills/<name>/` — always-active skills (e.g. `router-project-switch`).
 - `<tool-home>/knowledge/` — shared docs available to every project.
+- `<tool-home>/knowledge/shared-context.md` — overall shared context (org-wide standards) loaded for every project, alongside each project's `project-context.md`.
 - `projects/<name>/repos.yaml` — manifest of the project's source repos (tracked). Clones and worktrees are gitignored.
 - `AGENTS.md` — root context file for the agent.
 

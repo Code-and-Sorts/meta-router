@@ -546,6 +546,37 @@ class TestValidate:
         result = run(metarepo, "validate", expect_fail=True)
         assert "BROKEN" in result.stdout
 
+    def test_passes_without_shared_context(self, metarepo):
+        # shared-context.md is seeded by setup.sh, not the fixture — its absence
+        # must stay optional so a hand-built metarepo still passes.
+        run(metarepo, "init", "alpha")
+        result = run(metarepo, "validate")
+        assert "All checks passed" in result.stdout
+        assert "shared-context.md not found" in result.stdout
+
+    def test_reports_shared_context_present(self, metarepo):
+        run(metarepo, "init", "alpha")
+        (metarepo / ".claude" / "knowledge" / "shared-context.md").write_text(
+            "# Shared Context\n"
+        )
+        result = run(metarepo, "validate")
+        assert "All checks passed" in result.stdout
+        assert ".claude/knowledge/shared-context.md (shared context)" in result.stdout
+
+    def test_reports_shared_context_for_tool(self, metarepo):
+        # The shared-context path follows the configured agent tool's home.
+        (metarepo / ".github" / "knowledge").mkdir(parents=True)
+        (metarepo / ".github" / "knowledge" / "shared-context.md").write_text(
+            "# Shared Context\n"
+        )
+        # No init here, so symlinks are absent and validate exits nonzero; we
+        # only care that it resolves the shared-context path under the tool home.
+        result = run(
+            metarepo, "validate", expect_fail=True,
+            env={"BMAD_AGENT_TOOL": "github-copilot"},
+        )
+        assert ".github/knowledge/shared-context.md (shared context)" in result.stdout
+
 
 # ── Config command ───────────────────────────────────────────────────────────
 
@@ -563,6 +594,17 @@ class TestConfig:
         result = run(metarepo, "config")
         assert "specs" in result.stdout
         assert "config.yaml" in result.stdout
+
+    def test_reports_shared_context(self, metarepo):
+        result = run(metarepo, "config")
+        assert "shared context" in result.stdout
+        assert ".claude/knowledge/shared-context.md" in result.stdout
+        assert "not seeded" in result.stdout
+        (metarepo / ".claude" / "knowledge" / "shared-context.md").write_text(
+            "# Shared Context\n"
+        )
+        result = run(metarepo, "config")
+        assert "(present)" in result.stdout
 
 
 # ── Custom output folder ─────────────────────────────────────────────────────

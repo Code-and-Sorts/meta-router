@@ -23,9 +23,14 @@ activation_steps_prepend = [
   "Implement ALL code changes for this story inside those worktrees (implementation/<story-id>/<repo>/), never directly in repos/<repo>/. Commit on the story/<story-id> branch in each affected repo.",
 ]
 
-# Load the full worktree workflow as static context for the whole run.
+# Load the full worktree workflow as static context for the whole run, plus the
+# metarepo's overall shared context — org-wide standards that apply to every
+# project, loaded alongside the active project's project-context.md. setup.sh
+# rewrites the .claude/knowledge path to match the configured agent tool's
+# knowledge dir (.github/, .codex/, .agents/).
 persistent_facts = [
   "file:{project-root}/_bmad/custom/worktree-workflow.md",
+  "file:{project-root}/.claude/knowledge/shared-context.md",
 ]
 
 # Post-completion: remind the user the worktrees persist for review/PR.

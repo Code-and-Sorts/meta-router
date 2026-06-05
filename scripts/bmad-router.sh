@@ -710,7 +710,7 @@ cmd_worktree() {
   local yaml
   yaml="$(project_repos_yaml "$active")"
   local names=()
-  while IFS=$'\t' read -r n u b; do [[ -n "$n" ]] && names+=("$n"); done < <(parse_repos_yaml "$yaml")
+  while IFS=$'\t' read -r n _u _b; do [[ -n "$n" ]] && names+=("$n"); done < <(parse_repos_yaml "$yaml")
   (( ${#names[@]} > 0 )) || die "No repos configured for '$active' (edit projects/$active/repos.yaml)"
 
   local targets=()
@@ -778,14 +778,14 @@ cmd_worktree_list() {
       [[ -d "$story_dir" ]] || continue
       local story
       story="$(basename "$story_dir")"
-      local repos=""
+      local repo_list=""
       for repo_path in "$story_dir"/*/; do
         [[ -d "$repo_path" ]] || continue
-        repos+=" $(basename "$repo_path")"
+        repo_list+=" $(basename "$repo_path")"
       done
-      [[ -n "$repos" ]] || continue
+      [[ -n "$repo_list" ]] || continue
       if (( ! printed )); then echo -e "${BOLD}Worktrees for $active:${NC}"; printed=1; fi
-      echo -e "  ${GREEN}●${NC} $story ${DIM}(branch story/$story):${repos}${NC}"
+      echo -e "  ${GREEN}●${NC} $story ${DIM}(branch story/$story):${repo_list}${NC}"
     done
   fi
 
@@ -1038,7 +1038,7 @@ cmd_help() {
     repos                       List the active project's source repos
     clone [repo]                Clone repos.yaml entries into repos/
     worktree <story> [repo...]  Create per-story worktree(s) (one per repo)
-    worktree --all <story>      Create a worktree for every configured repo
+    worktree <story> --all      Create a worktree for every configured repo
     worktree list               List active per-story worktrees
     worktree-rm <story>         Remove all worktrees for a story
 

@@ -34,7 +34,21 @@ mkdir my-metarepo && cd my-metarepo
 bash /path/to/bmad-router/setup.sh .
 ```
 
-The setup script walks you through three questions: what to call the output folder (default: `features`), what to call the docs folder (default: `docs`), and which projects to create.
+The target directory — the folder the metarepo is set up in — is the first argument (`.` above). The setup script walks you through three questions: what to call the output folder (default: `features`), what to call the docs folder (default: `docs`), and which projects to create.
+
+### Scripted / non-interactive setup
+
+Set `BMAD_SETUP_NONINTERACTIVE=1` to skip all prompts and source answers from the environment — useful for CI. The target directory can be defined with `BMAD_SETUP_TARGET` instead of the positional argument (the positional argument still wins if both are given):
+
+```bash
+BMAD_SETUP_NONINTERACTIVE=1 \
+  BMAD_SETUP_TARGET=my-metarepo \
+  BMAD_OUTPUT_FOLDER=features \
+  BMAD_DOCS_FOLDER=docs \
+  BMAD_SETUP_PROJECTS=alpha,beta \
+  BMAD_SETUP_ISSUES_SYNC=y \
+  bash /path/to/bmad-router/setup.sh
+```
 
 ![Setup](docs/images/01-setup.png)
 

@@ -27,13 +27,23 @@ TOTAL_STEPS=9
 # Parse args
 # ─────────────────────────────────────────────────────────────────────────────
 
-TARGET="${1:-.}"
-if [[ "$TARGET" != "." ]]; then mkdir -p "$TARGET"; fi
-TARGET="$(cd "$TARGET" && pwd)"
+NONINTERACTIVE="${BMAD_SETUP_NONINTERACTIVE:-0}"
 
 echo -e "${BOLD}╔══════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}║          BMAD Metarepo Setup                                ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════════════════════════╝${NC}"
+
+# Resolve the target directory — the run's output, i.e. the folder the metarepo
+# is set up in. Precedence:
+#   positional arg  >  BMAD_SETUP_TARGET env  >  interactive prompt  >  current dir
+TARGET_INPUT="${1:-${BMAD_SETUP_TARGET:-}}"
+if [[ -z "$TARGET_INPUT" && "$NONINTERACTIVE" != 1 ]]; then
+  read -rp "  Directory to set up the metarepo in [.]: " TARGET_INPUT
+fi
+TARGET_INPUT="${TARGET_INPUT:-.}"
+if [[ "$TARGET_INPUT" != "." ]]; then mkdir -p "$TARGET_INPUT"; fi
+TARGET="$(cd "$TARGET_INPUT" && pwd)"
+
 echo -e "  ${DIM}Target: $TARGET${NC}"
 echo ""
 
@@ -45,11 +55,12 @@ step 1 "Configuration"
 
 # Non-interactive mode for CI / scripted installs. When BMAD_SETUP_NONINTERACTIVE=1,
 # every prompt is skipped and answers are sourced from environment variables:
+#   BMAD_SETUP_TARGET      directory to set up in  (default: current dir; the
+#                          positional arg, if given, still takes precedence)
 #   BMAD_OUTPUT_FOLDER     output folder name      (default: features)
 #   BMAD_DOCS_FOLDER       docs folder name        (default: docs)
 #   BMAD_SETUP_PROJECTS    comma-separated projects (default: none)
 #   BMAD_SETUP_ISSUES_SYNC y/n to enable sync       (default: n)
-NONINTERACTIVE="${BMAD_SETUP_NONINTERACTIVE:-0}"
 if [[ "$NONINTERACTIVE" == 1 ]]; then
   info "Non-interactive mode (BMAD_SETUP_NONINTERACTIVE=1)"
 fi

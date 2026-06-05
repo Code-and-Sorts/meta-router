@@ -54,9 +54,9 @@ BMAD_SETUP_NONINTERACTIVE=1 \
 - `_bmad/` — shared BMAD core (agents, workflows, tasks), installed once.
 - `projects/<name>/features/` — that project's BMAD output: PRD, architecture, epics, stories, sprint status, `project-context.md`.
 - `projects/<name>/docs/` — that project's `project_knowledge`.
-- `projects/<name>/.claude/skills/` — agent skills that activate only when the project is switched in.
-- `.claude/skills/<name>/` — always-active skills (e.g. `router-project-switch`).
-- `.claude/knowledge/` — shared docs available to every project.
+- `projects/<name>/<tool-home>/skills/` — agent skills that activate only when the project is switched in.
+- `<tool-home>/skills/<name>/` — always-active skills (e.g. `router-project-switch`).
+- `<tool-home>/knowledge/` — shared docs available to every project.
 - `projects/<name>/repos.yaml` — manifest of the project's source repos (tracked). Clones and worktrees are gitignored.
 - `AGENTS.md` — root context file for the agent.
 

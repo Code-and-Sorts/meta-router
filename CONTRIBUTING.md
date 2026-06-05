@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Node.js ≥ 20 (required by BMAD)
+- Node.js ≥ 20 (required by BMad)
 - Python 3.11+
 - git
 - [shellcheck](https://www.shellcheck.net/) (`brew install shellcheck` on macOS)

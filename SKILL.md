@@ -1,17 +1,17 @@
 ---
 name: router-project-switch
 description: >
-  Switch the active BMAD project context in a multi-project metarepo. Use this skill whenever the
+  Switch the active BMad project context in a multi-project metarepo. Use this skill whenever the
   user says "switch project", "switch to <project>", "bmad-router", "change project context",
   "list projects", "which project", "active project", "current project", or references working on
-  a different project within the metarepo. Also trigger when a BMAD workflow targets the wrong
+  a different project within the metarepo. Also trigger when a BMad workflow targets the wrong
   project or a symlink is missing/broken. Manages five symlinks: output folder (features by
   default), docs folder, source-repo clones (`repos/`), per-story worktrees (`implementation/`), and project-specific agent skills.
 ---
 
 # router-project-switch
 
-Manages multi-project context switching in a BMAD metarepo by routing five
+Manages multi-project context switching in a BMad metarepo by routing five
 symlinks to the active project: output folder, docs, source-repo clones
 (`repos/`), per-story worktrees (`implementation/`), and agent skills.
 
@@ -33,7 +33,7 @@ metarepo/
 │       └── shared-context.md           # Overall shared context (all projects)
 ├── projects/
 │   ├── project-a/
-│   │   ├── features/                   # BMAD output artifacts
+│   │   ├── features/                   # BMad output artifacts
 │   │   │   ├── planning-artifacts/
 │   │   │   │   ├── PRD.md
 │   │   │   │   ├── architecture.md
@@ -108,7 +108,7 @@ Its `shared-context.md` is the **overall shared context** — a first-class,
 org-wide context file that applies to every project, symmetric in role to a
 project's `project-context.md`. Agents read it before every workflow alongside
 the active project's `project-context.md`; project context overrides shared
-context on conflict. BMAD loads it deterministically via a `persistent_facts`
+context on conflict. BMad loads it deterministically via a `persistent_facts`
 `file:` reference in `_bmad/custom/bmad-dev-story.toml` and
 `bmad-create-story.toml` (the same mechanism that loads `worktree-workflow.md`).
 
@@ -120,14 +120,14 @@ Each project lists its source repos in a tracked `projects/<name>/repos.yaml`.
 `implementation/<story-id>/<repo>/`, each on branch `story/<story-id>`. A
 full-stack story can span several repos at once.
 
-This is wired through BMAD's customization at `_bmad/custom/bmad-dev-story.toml`
+This is wired through BMad's customization at `_bmad/custom/bmad-dev-story.toml`
 (and `bmad-create-story.toml`): the Scrum Master adds a `## Affected Repos`
 section to each story, and the Dev agent reads it to create the right worktrees
 before implementing. See `_bmad/custom/worktree-workflow.md`.
 
 ## Behavior Rules
 
-1. Before any BMAD workflow, verify the output symlink points to the right project.
+1. Before any BMad workflow, verify the output symlink points to the right project.
 2. When the user mentions a different project by name, ask before switching.
 3. Never delete project artifacts — `switch` only changes symlinks.
 4. Must be run from the metarepo root (detected by `_bmad/` directory).

@@ -1,5 +1,5 @@
 """
-Tests for bmad-router.sh — multi-project context switcher for BMAD metarepos.
+Tests for bmad-router.sh — multi-project context switcher for BMad metarepos.
 Default output folder: "features". Default docs folder: "docs".
 """
 

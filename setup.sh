@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ─────────────────────────────────────────────────────────────────────────────
-# setup.sh — Bootstrap a BMAD multi-project metarepo
+# setup.sh — Bootstrap a BMad multi-project metarepo
 # ─────────────────────────────────────────────────────────────────────────────
 
 SETUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,7 +42,7 @@ tool_dir_for_tool() {
 NONINTERACTIVE="${BMAD_SETUP_NONINTERACTIVE:-0}"
 
 echo -e "${BOLD}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}║          BMAD Metarepo Setup                                ║${NC}"
+echo -e "${BOLD}║          BMad Metarepo Setup                                ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════════════════════════╝${NC}"
 
 # Resolve the target directory — the run's output, i.e. the folder the metarepo
@@ -84,7 +84,7 @@ if [[ "$NONINTERACTIVE" == 1 ]]; then
 else
   echo -e "  What should the output folder be called?"
   echo -e "  This is where PRDs, epics, stories, and architecture docs live."
-  echo -e "  ${DIM}(BMAD default: _bmad-output)${NC}"
+  echo -e "  ${DIM}(BMad default: _bmad-output)${NC}"
   echo ""
   read -rp "  Output folder name [features]: " USER_OUTPUT_FOLDER
   USER_OUTPUT_FOLDER="${USER_OUTPUT_FOLDER:-features}"
@@ -116,14 +116,14 @@ fi
 
 ok "Docs folder: ${BOLD}$USER_DOCS_FOLDER${NC}"
 
-# Agent tool — determines which IDE/agent BMAD integrates with and, in turn,
+# Agent tool — determines which IDE/agent BMad integrates with and, in turn,
 # where agent skills live (each tool reads them from its own directory).
 if [[ "$NONINTERACTIVE" == 1 ]]; then
   AGENT_TOOL="${BMAD_SETUP_TOOL:-claude-code}"
 else
   echo ""
   echo -e "  Which agent tool are you setting up for?"
-  echo -e "  ${DIM}This selects the BMAD integration and where agent skills live.${NC}"
+  echo -e "  ${DIM}This selects the BMad integration and where agent skills live.${NC}"
   echo ""
   echo -e "    1) Claude Code     ${DIM}(skills in .claude/skills/)${NC}"
   echo -e "    2) GitHub Copilot  ${DIM}(skills in .github/skills/)${NC}"
@@ -204,7 +204,7 @@ step 2 "Checking prerequisites"
 if command -v node &>/dev/null; then
   ok "Node.js $(node --version)"
 else
-  warn "Node.js not found — BMAD install requires it"
+  warn "Node.js not found — BMad install requires it"
   die "Install from https://nodejs.org or via your package manager"
 fi
 
@@ -239,16 +239,16 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 4: Install BMAD if not present
+# Step 4: Install BMad if not present
 # ─────────────────────────────────────────────────────────────────────────────
 
-step 4 "Checking BMAD installation"
+step 4 "Checking BMad installation"
 
 if [[ -d "_bmad" ]]; then
-  ok "BMAD core already installed"
+  ok "BMad core already installed"
 else
-  info "Installing BMAD Method..."
-  # Non-interactive install (BMAD v6): --yes skips prompts where possible,
+  info "Installing BMad Method..."
+  # Non-interactive install (BMad v6): --yes skips prompts where possible,
   # --directory pins the target (the installer otherwise prompts for it on a TTY
   # and stalls on non-TTY stdin), --modules picks the module set (core auto-added),
   # --tools targets the IDE/agent integration (required for fresh --yes installs).
@@ -257,9 +257,9 @@ else
   BMAD_INSTALL_TOOLS="${BMAD_INSTALL_TOOLS:-$AGENT_TOOL}"
   if npx bmad-method install --yes --directory . \
        --modules "$BMAD_INSTALL_MODULES" --tools "$BMAD_INSTALL_TOOLS" </dev/null; then
-    ok "BMAD installed"
+    ok "BMad installed"
   else
-    warn "BMAD auto-install failed — creating minimal skeleton"
+    warn "BMad auto-install failed — creating minimal skeleton"
     mkdir -p _bmad/bmm/agents _bmad/core/tasks _bmad/custom
   fi
 fi
@@ -274,9 +274,9 @@ if [[ -f "$YAML_CFG" ]]; then
   else
     echo "output_folder: \"{project-root}/$USER_OUTPUT_FOLDER\"" >> "$YAML_CFG"
   fi
-  # BMAD's planning_artifacts / implementation_artifacts keys point into the
+  # BMad's planning_artifacts / implementation_artifacts keys point into the
   # output folder (they default to the {project-root}/_bmad-output/* paths), so
-  # repoint them at the chosen output folder too — otherwise BMAD writes those
+  # repoint them at the chosen output folder too — otherwise BMad writes those
   # artifacts to _bmad-output/ while the router routes the renamed folder.
   if grep -qE '^[[:space:]]*planning_artifacts[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
     sed -i.bak "s|^\([[:space:]]*planning_artifacts[[:space:]]*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER/planning-artifacts\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
@@ -383,7 +383,7 @@ if [[ ! -f "$KNOWLEDGE_BASE/README.md" ]]; then
 # Shared Knowledge
 
 Documentation and conventions that apply across all projects in this metarepo.
-BMAD agents can reference these files regardless of which project is active.
+BMad agents can reference these files regardless of which project is active.
 
 Examples:
   - org-standards.md — Coding standards and conventions
@@ -402,7 +402,7 @@ if [[ ! -f "$KNOWLEDGE_BASE/shared-context.md" ]]; then
 # Shared Context
 
 <!-- Generated by bmad-router. OVERALL shared context for ALL projects in this
-     metarepo. BMAD agents load this before every workflow, alongside the active
+     metarepo. BMad agents load this before every workflow, alongside the active
      project's project-context.md. Project context overrides this on conflict. -->
 
 ## Overview
@@ -444,7 +444,7 @@ SHAREDCTX
   ok "$KNOWLEDGE_BASE/shared-context.md"
 fi
 
-# Install BMAD customization overrides that drive per-story git worktrees.
+# Install BMad customization overrides that drive per-story git worktrees.
 # These hook the bmad-dev-story / bmad-create-story skills via _bmad/custom/.
 if [[ -d "$SETUP_DIR/templates/bmad-custom" && -d "_bmad" ]]; then
   mkdir -p _bmad/custom
@@ -457,7 +457,7 @@ if [[ -d "$SETUP_DIR/templates/bmad-custom" && -d "_bmad" ]]; then
   # The bmad-custom TOMLs inject the shared context via a persistent_facts
   # "file:" reference. The committed templates use a tool-agnostic
   # __KNOWLEDGE_DIR__ placeholder; resolve it to the configured agent tool's
-  # knowledge dir so BMAD loads the file from where setup actually seeded it.
+  # knowledge dir so BMad loads the file from where setup actually seeded it.
   # This runs on every setup invocation and rewrites whatever the placeholder
   # currently resolves to (placeholder or a prior tool's dir), so re-running with
   # a different agent tool repoints an already-installed override — not just the
@@ -522,12 +522,12 @@ else
   cat > AGENTS.md << AGENTMD
 # AGENTS.md
 
-This is a BMAD Method multi-project metarepo. Read this file before doing anything.
+This is a BMad Method multi-project metarepo. Read this file before doing anything.
 
-## BMAD Method
+## BMad Method
 
-This repo uses the [BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD) — an
-agent-driven development workflow with specialized roles. The shared BMAD core lives
+This repo uses the [BMad Method](https://github.com/bmad-code-org/BMad-METHOD) — an
+agent-driven development workflow with specialized roles. The shared BMad core lives
 at \`_bmad/\` and contains agents, workflows, and tasks.
 
 ### Workflow phases
@@ -545,13 +545,13 @@ Work flows through four phases. Each phase has a primary agent.
 
 ### How to invoke agents
 
-Use BMAD slash commands or skill references depending on your IDE:
+Use BMad slash commands or skill references depending on your IDE:
 - Claude Code: \`/pm\`, \`/sm\`, \`/architect\`, \`/dev\`, \`/bmad-help\`
 - Other IDEs: reference the skill files in \`$SKILLS_BASE/\`
 
 If you're unsure what to do next, ask \`bmad-help\`.
 
-### Key BMAD files
+### Key BMad files
 
 | File | Purpose |
 |---|---|
@@ -565,7 +565,7 @@ If you're unsure what to do next, ask \`bmad-help\`.
 
 ## Multi-project routing
 
-This metarepo hosts multiple projects that share the same BMAD core. Each project
+This metarepo hosts multiple projects that share the same BMad core. Each project
 has isolated artifacts, docs, and agent skills. Five symlinks at the repo root
 point to the active project:
 
@@ -584,7 +584,7 @@ point to the active project:
 3. Read the overall shared context (\`$KNOWLEDGE_BASE/shared-context.md\`) and the
    active project's context (\`$USER_OUTPUT_FOLDER/project-context.md\`). Project
    context overrides shared context on conflict.
-4. Never write BMAD output to a project that isn't active.
+4. Never write BMad output to a project that isn't active.
 
 ### Switching projects
 
@@ -613,7 +613,7 @@ the active project's \`project/\` skills.
 
 ## Rules
 
-- Always verify the active project before running any BMAD workflow.
+- Always verify the active project before running any BMad workflow.
 - If a user mentions a project that isn't active, ask before switching.
 - Follow the workflow phases in order: don't skip from brief to implementation.
 - Read the overall shared context (\`$KNOWLEDGE_BASE/shared-context.md\`, org-wide)
@@ -622,7 +622,7 @@ the active project's \`project/\` skills.
 - Source repos are declared in \`projects/<name>/repos.yaml\` (tracked). Clones live
   in \`projects/<name>/repos/\` and per-story git worktrees in
   \`projects/<name>/implementation/<story-id>/<repo>/\` — both gitignored. The
-  per-story worktree workflow is wired through BMAD's customization at
+  per-story worktree workflow is wired through BMad's customization at
   \`_bmad/custom/bmad-dev-story.toml\` (see \`_bmad/custom/worktree-workflow.md\`);
   do not duplicate those steps here.
 - Each project's \`$USER_DOCS_FOLDER/\` is its \`project_knowledge\` directory.
@@ -652,14 +652,14 @@ projects/*/repos/
 projects/*/implementation/
 # Project skills symlink
 $SKILLS_BASE/project
-# Personal BMAD customization overrides
+# Personal BMad customization overrides
 _bmad/custom/*.user.toml
 GITIGNORE
     ok "Appended bmad-router rules to .gitignore"
   fi
 else
   cat > .gitignore << GITIGNORE
-# ── BMAD Metarepo ────────────────────────────────────────────────────────────
+# ── BMad Metarepo ────────────────────────────────────────────────────────────
 
 # Output + docs symlinks at the repo root (recreated on switch). Anchored with a
 # leading slash so the per-project projects/*/<folder> artifacts stay tracked.
@@ -677,10 +677,10 @@ projects/*/implementation/
 # Project skills symlink (managed by bmad-router)
 $SKILLS_BASE/project
 
-# Personal BMAD customization overrides (team overrides are committed)
+# Personal BMad customization overrides (team overrides are committed)
 _bmad/custom/*.user.toml
 
-# Node / BMAD installer
+# Node / BMad installer
 node_modules/
 
 # Python

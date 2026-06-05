@@ -1,8 +1,8 @@
-# bmad-router override for the BMAD `bmad-dev-story` skill.
+# bmad-router override for the BMad `bmad-dev-story` skill.
 #
 # Copied into _bmad/custom/bmad-dev-story.toml by setup.sh. This is a sparse,
 # committed (team-scope) override that merges over the skill's shipped
-# customize.toml. Per BMAD merge rules, arrays here APPEND to the defaults and
+# customize.toml. Per BMad merge rules, arrays here APPEND to the defaults and
 # scalars override. Personal tweaks go in _bmad/custom/bmad-dev-story.user.toml
 # (gitignored), which wins over this file.
 #

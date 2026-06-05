@@ -43,7 +43,7 @@ BMAD_SETUP_NONINTERACTIVE=1 \
 | --- | --- |
 | `features/` | `projects/<project>/features/` |
 | `docs/` | `projects/<project>/docs/` |
-| `.claude/skills/project/` | `projects/<project>/.claude/skills/` |
+| `<tool-home>/skills/project/` | `projects/<project>/<tool-home>/skills/` |
 | `repos/` | `projects/<project>/repos/` |
 | `implementation/` | `projects/<project>/implementation/` |
 

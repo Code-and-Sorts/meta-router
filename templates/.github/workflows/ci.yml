@@ -1,0 +1,23 @@
+name: CI
+
+# CI for a bmad-router metarepo. Installed by setup.sh into the metarepo's
+# .github/workflows/. Lints the bundled router shell script on every pull
+# request and on pushes to main.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lint shell scripts
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          severity: error

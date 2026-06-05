@@ -1,0 +1,162 @@
+name: Generate example branch
+
+# Two sequential jobs:
+#   1. generate     — regenerate a full example metarepo (real BMAD install),
+#                     run the metarepo's own CI, and force-push it to `example`.
+#   2. sync-issues  — after the branch is updated, run the issue sync (the same
+#                     bmad-issues.py the sync-issues Action uses) against the
+#                     example project, creating/updating real issues in this repo
+#                     and committing the issue-number backlinks onto `example`.
+#
+# Runs on every push to main, and on manual dispatch (Actions tab → Run workflow)
+# so you can refresh the example + its issues on demand and review the project.
+#
+# No infinite loop: triggers only on pushes to `main` (and manual dispatch); both
+# jobs write to `example`, which never retriggers this workflow.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Don't let two runs race on the example branch.
+concurrency:
+  group: generate-example
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # push/force-push the example branch
+  issues: write     # sync example stories to GitHub Issues (showcase)
+
+jobs:
+  generate:
+    name: Regenerate and publish example branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main (source of setup.sh + seed)
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate example metarepo
+        env:
+          BMAD_SETUP_NONINTERACTIVE: '1'
+          BMAD_OUTPUT_FOLDER: features
+          BMAD_DOCS_FOLDER: docs
+          BMAD_SETUP_PROJECTS: 'alpha,beta'
+          BMAD_SETUP_ISSUES_SYNC: 'y'
+        run: |
+          set -euxo pipefail
+          GEN="$RUNNER_TEMP/example-metarepo"
+          rm -rf "$GEN"
+          # Runs the real `npx bmad-method install` (network, ~minutes).
+          bash setup.sh "$GEN"
+          # Overlay curated seed content over the scaffolded projects.
+          for proj in alpha beta; do
+            if [ -d "examples/seed/$proj" ]; then
+              cp -R "examples/seed/$proj/." "$GEN/projects/$proj/"
+            fi
+          done
+
+      - name: Run the example project's CI (shellcheck)
+        env:
+          GEN_DIR: ${{ runner.temp }}/example-metarepo
+        run: |
+          set -euxo pipefail
+          cd "$GEN_DIR"
+          # Exercise the CI the generated metarepo ships (.github/workflows/ci.yml):
+          # lint its bundled router shell script. Gates publishing the example on
+          # this passing. (The router's own pytest suite lives in this source repo,
+          # not in generated metarepos, and is run by this repo's own ci.yml.)
+          shellcheck --severity=error scripts/bmad-router.sh
+
+      - name: Force-push generated tree to example branch
+        env:
+          GEN_DIR: ${{ runner.temp }}/example-metarepo
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd "$GEN_DIR"
+          # setup.sh runs `git init` in the target dir (no commits). Discard that
+          # empty repo so we start a clean history on `example`.
+          rm -rf .git
+          # The default GITHUB_TOKEN is forbidden (by GitHub design) from pushing
+          # files under .github/workflows/. The generated metarepo ships CI +
+          # sync-issues workflows there, so relocate them to a visible,
+          # non-workflows path on the static example branch.
+          if [ -d .github/workflows ] && [ -n "$(ls -A .github/workflows 2>/dev/null)" ]; then
+            mkdir -p .github/example-workflows
+            mv .github/workflows/* .github/example-workflows/
+            rmdir .github/workflows
+            printf '%s\n' \
+              '# example-workflows/' \
+              '' \
+              'On a real metarepo these files live under `.github/workflows/`. They are' \
+              'relocated here on the static example branch because the auto-publish job' \
+              'pushes with the default GITHUB_TOKEN, which GitHub forbids from writing' \
+              'workflow files. Copy them back to .github/workflows/ in your own metarepo.' \
+              > .github/example-workflows/README.md
+          fi
+          # The example tree differs from main, so a fresh init + force-push keeps
+          # `example` clean and conflict-free.
+          git init -q -b example
+          git config user.name "bmad-example[bot]"
+          git config user.email "bmad-example[bot]@users.noreply.github.com"
+          git add -A
+          # repos/ and implementation/ are gitignored in a real metarepo; force-add
+          # the placeholder READMEs so the structure is visible on the branch.
+          git add --force projects/*/repos/ projects/*/implementation/ || true
+          git commit -qm "chore: regenerate example metarepo from ${GITHUB_SHA}"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin example
+
+  sync-issues:
+    name: Sync example stories to GitHub Issues
+    needs: generate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the freshly published example branch
+        uses: actions/checkout@v4
+        with:
+          ref: example
+          # token must be able to push the issue-number backlinks back to example
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Sync ready stories to GitHub Issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          # alpha's github-sync.yaml targets this repo, so its ready stories become
+          # real issues here. Idempotent (HTML markers); writes issue numbers back
+          # into sprint-status.yaml.
+          python scripts/bmad-issues.py sync --project alpha
+
+      - name: Commit issue-number backlinks onto example
+        run: |
+          set -euxo pipefail
+          if git diff --quiet; then
+            echo "No backlink changes to commit"
+          else
+            git config user.name "bmad-issues[bot]"
+            git config user.email "bmad-issues[bot]@users.noreply.github.com"
+            git add -A
+            git commit -qm "chore: sync issue numbers into sprint-status.yaml [skip ci]"
+            git push origin HEAD:example
+          fi

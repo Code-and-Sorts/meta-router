@@ -1,0 +1,17 @@
+# Sprint Status — managed by BMAD sprint-planning workflow
+# Example artifact for the bmad-router `example` branch.
+current_sprint: 1
+epics:
+  - id: epic-1
+    title: Task lifecycle
+    status: in-progress
+    stories:
+      - id: STORY-001
+        title: Create a task (full-stack)
+        status: ready
+        type: story
+        file: implementation-artifacts/STORY-001.md
+      - id: STORY-002
+        title: Complete a task (api only)
+        status: draft
+        type: story

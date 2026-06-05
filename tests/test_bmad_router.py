@@ -18,8 +18,10 @@ def metarepo(tmp_path: Path) -> Path:
     (tmp_path / "_bmad" / "bmm" / "agents").mkdir(parents=True)
     (tmp_path / "_bmad" / "core" / "tasks").mkdir(parents=True)
     (tmp_path / "projects").mkdir()
-    (tmp_path / ".agents" / "skills" / "shared").mkdir(parents=True)
-    (tmp_path / ".agents" / "knowledge").mkdir(parents=True)
+    # Default agent tool is claude-code, so skills and shared knowledge live
+    # under the .claude home directory.
+    (tmp_path / ".claude" / "skills" / "router-project-switch").mkdir(parents=True)
+    (tmp_path / ".claude" / "knowledge").mkdir(parents=True)
 
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir()
@@ -47,11 +49,48 @@ def run(metarepo, *args, expect_fail=False, env=None):
     return result
 
 
-def add_project_skill(metarepo, project, skill_name):
-    skill_dir = metarepo / "projects" / project / ".agents" / "skills" / skill_name
+def add_project_skill(metarepo, project, skill_name, skills_base=".claude/skills"):
+    skill_dir = metarepo / "projects" / project / skills_base / skill_name
     skill_dir.mkdir(parents=True, exist_ok=True)
     (skill_dir / "SKILL.md").write_text(f"# {skill_name}\n")
     return skill_dir
+
+
+GIT_ENV = {
+    "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+}
+
+
+def make_source_repo(tmp_path, name):
+    """Create a real local git repo to act as a cloneable source remote."""
+    src = tmp_path / f"source-{name}"
+    src.mkdir()
+    env = {**os.environ, **GIT_ENV}
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=src, check=True, env=env)
+    (src / "README.md").write_text(f"# {name}\n")
+    subprocess.run(["git", "add", "."], cwd=src, check=True, env=env)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=src, check=True, env=env)
+    return src
+
+
+def write_repos_yaml(metarepo, project, repos):
+    """repos: list of (name, source_path) tuples."""
+    lines = ["repos:"]
+    for name, src in repos:
+        lines += [
+            f"  - name: {name}",
+            f"    url: file://{src}",
+            "    branch: main",
+        ]
+    (metarepo / "projects" / project / "repos.yaml").write_text("\n".join(lines) + "\n")
+
+
+def git_branch(path):
+    return subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=path, capture_output=True, text=True,
+    ).stdout.strip()
 
 
 # ── Init ─────────────────────────────────────────────────────────────────────
@@ -59,7 +98,11 @@ def add_project_skill(metarepo, project, skill_name):
 class TestInit:
     def test_creates_project_directory(self, metarepo):
         run(metarepo, "init", "alpha")
-        assert (metarepo / "projects" / "alpha" / "src").is_dir()
+        project = metarepo / "projects" / "alpha"
+        assert (project / "repos").is_dir()
+        assert (project / "implementation").is_dir()
+        assert (project / "repos.yaml").is_file()
+        assert not (project / "src").exists()
 
     def test_scaffolds_features_folder(self, metarepo):
         """Default output folder is 'features'."""
@@ -75,7 +118,7 @@ class TestInit:
 
     def test_scaffolds_skills_dir(self, metarepo):
         run(metarepo, "init", "alpha")
-        assert (metarepo / "projects" / "alpha" / ".agents" / "skills").is_dir()
+        assert (metarepo / "projects" / "alpha" / ".claude" / "skills").is_dir()
 
     def test_seeds_project_context(self, metarepo):
         run(metarepo, "init", "alpha")
@@ -104,6 +147,112 @@ class TestInit:
         assert result.returncode != 0
 
 
+# ── Repos + worktrees ────────────────────────────────────────────────────────
+
+class TestRepos:
+    def test_init_scaffolds_repos_yaml(self, metarepo):
+        run(metarepo, "init", "alpha")
+        repos_yaml = metarepo / "projects" / "alpha" / "repos.yaml"
+        assert repos_yaml.is_file()
+        assert "repos:" in repos_yaml.read_text()
+
+    def test_init_creates_repos_and_implementation_dirs(self, metarepo):
+        run(metarepo, "init", "alpha")
+        assert (metarepo / "projects" / "alpha" / "repos").is_dir()
+        assert (metarepo / "projects" / "alpha" / "implementation").is_dir()
+
+    def test_repos_command_empty_on_fresh_project(self, metarepo):
+        run(metarepo, "init", "alpha")
+        result = run(metarepo, "repos")
+        assert "No repos configured" in result.stdout
+
+    def test_repos_lists_configured(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        write_repos_yaml(metarepo, "alpha", [("web", web)])
+        result = run(metarepo, "repos")
+        assert "web" in result.stdout
+        assert "not cloned" in result.stdout
+
+    def test_clone_populates_repos_dir(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        write_repos_yaml(metarepo, "alpha", [("web", web)])
+        run(metarepo, "clone")
+        assert (metarepo / "projects" / "alpha" / "repos" / "web" / ".git").exists()
+
+    def test_worktree_default_sole_repo(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        write_repos_yaml(metarepo, "alpha", [("web", web)])
+        run(metarepo, "clone")
+        run(metarepo, "worktree", "STORY-1")
+        wt = metarepo / "projects" / "alpha" / "implementation" / "STORY-1" / "web"
+        assert (wt / ".git").exists()
+        assert git_branch(wt) == "story/STORY-1"
+
+    def test_worktree_multi_repo(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        api = make_source_repo(tmp_path, "api")
+        write_repos_yaml(metarepo, "alpha", [("web", web), ("api", api)])
+        run(metarepo, "clone")
+        run(metarepo, "worktree", "STORY-1", "web", "api")
+        impl = metarepo / "projects" / "alpha" / "implementation" / "STORY-1"
+        assert (impl / "web" / ".git").exists()
+        assert (impl / "api" / ".git").exists()
+        assert git_branch(impl / "web") == "story/STORY-1"
+        assert git_branch(impl / "api") == "story/STORY-1"
+
+    def test_worktree_all_flag(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        api = make_source_repo(tmp_path, "api")
+        write_repos_yaml(metarepo, "alpha", [("web", web), ("api", api)])
+        run(metarepo, "clone")
+        run(metarepo, "worktree", "STORY-2", "--all")
+        impl = metarepo / "projects" / "alpha" / "implementation" / "STORY-2"
+        assert (impl / "web").is_dir()
+        assert (impl / "api").is_dir()
+
+    def test_worktree_requires_repo_when_multiple(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        api = make_source_repo(tmp_path, "api")
+        write_repos_yaml(metarepo, "alpha", [("web", web), ("api", api)])
+        run(metarepo, "clone")
+        result = run(metarepo, "worktree", "STORY-3", expect_fail=True)
+        assert result.returncode != 0
+        assert "specify which" in result.stderr.lower()
+
+    def test_worktree_rejects_unknown_repo(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        write_repos_yaml(metarepo, "alpha", [("web", web)])
+        run(metarepo, "clone")
+        result = run(metarepo, "worktree", "STORY-4", "ghost", expect_fail=True)
+        assert result.returncode != 0
+
+    def test_worktree_rm_removes(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        api = make_source_repo(tmp_path, "api")
+        write_repos_yaml(metarepo, "alpha", [("web", web), ("api", api)])
+        run(metarepo, "clone")
+        run(metarepo, "worktree", "STORY-5", "--all")
+        run(metarepo, "worktree-rm", "STORY-5")
+        assert not (metarepo / "projects" / "alpha" / "implementation" / "STORY-5").exists()
+
+    def test_worktree_list(self, metarepo, tmp_path):
+        run(metarepo, "init", "alpha")
+        web = make_source_repo(tmp_path, "web")
+        write_repos_yaml(metarepo, "alpha", [("web", web)])
+        run(metarepo, "clone")
+        run(metarepo, "worktree", "STORY-6")
+        result = run(metarepo, "worktree", "list")
+        assert "STORY-6" in result.stdout
+
+
 # ── Switch ───────────────────────────────────────────────────────────────────
 
 class TestSwitch:
@@ -121,8 +270,20 @@ class TestSwitch:
 
     def test_creates_skills_symlink(self, metarepo):
         run(metarepo, "init", "alpha")
-        link = metarepo / ".agents" / "skills" / "project"
+        link = metarepo / ".claude" / "skills" / "project"
         assert link.is_symlink()
+
+    def test_creates_repos_and_implementation_symlinks(self, metarepo):
+        run(metarepo, "init", "alpha")
+        assert os.readlink(metarepo / "repos") == "projects/alpha/repos"
+        assert os.readlink(metarepo / "implementation") == "projects/alpha/implementation"
+
+    def test_repos_implementation_symlinks_follow_switch(self, metarepo):
+        run(metarepo, "init", "alpha")
+        run(metarepo, "init", "beta")
+        run(metarepo, "switch", "alpha")
+        assert os.readlink(metarepo / "repos") == "projects/alpha/repos"
+        assert os.readlink(metarepo / "implementation") == "projects/alpha/implementation"
 
     def test_switches_all_three_symlinks(self, metarepo):
         run(metarepo, "init", "alpha")
@@ -130,7 +291,7 @@ class TestSwitch:
         run(metarepo, "switch", "alpha")
         assert os.readlink(metarepo / "features") == "projects/alpha/features"
         assert os.readlink(metarepo / "docs") == "projects/alpha/docs"
-        assert "alpha" in os.readlink(metarepo / ".agents" / "skills" / "project")
+        assert "alpha" in os.readlink(metarepo / ".claude" / "skills" / "project")
 
     def test_updates_active_project_file(self, metarepo):
         run(metarepo, "init", "alpha")
@@ -226,7 +387,7 @@ class TestSkillsRouting:
         add_project_skill(metarepo, "beta", "beta-db")
 
         run(metarepo, "switch", "alpha")
-        link = metarepo / ".agents" / "skills" / "project"
+        link = metarepo / ".claude" / "skills" / "project"
         assert (link / "alpha-api" / "SKILL.md").exists()
         assert not (link / "beta-db").exists()
 
@@ -241,13 +402,15 @@ class TestSkillsRouting:
         result = run(metarepo, "switch", "alpha")
         assert "2 project skill(s)" in result.stdout
 
-    def test_shared_skills_unaffected(self, metarepo):
-        shared = metarepo / ".agents" / "skills" / "shared" / "test" / "SKILL.md"
-        shared.parent.mkdir(parents=True, exist_ok=True)
-        shared.write_text("# Shared")
+    def test_always_active_skills_unaffected(self, metarepo):
+        """A flat always-active skill (.claude/skills/<name>/) survives switching."""
+        always_on = metarepo / ".claude" / "skills" / "org-standards" / "SKILL.md"
+        always_on.parent.mkdir(parents=True, exist_ok=True)
+        always_on.write_text("# Org standards")
         run(metarepo, "init", "alpha")
         run(metarepo, "init", "beta")
-        assert shared.exists()
+        run(metarepo, "switch", "alpha")
+        assert always_on.exists()
 
     def test_list_shows_skill_counts(self, metarepo):
         run(metarepo, "init", "alpha")
@@ -255,6 +418,44 @@ class TestSkillsRouting:
         run(metarepo, "init", "beta")
         result = run(metarepo, "list")
         assert "1 skill(s)" in result.stdout
+
+
+# ── Agent tool → skills directory ────────────────────────────────────────────
+
+class TestAgentTool:
+    def test_copilot_tool_uses_github_skills_dir(self, metarepo):
+        (metarepo / "_bmad" / "bmm" / "config.yaml").write_text(
+            'agent_tool: "github-copilot"\n'
+        )
+        run(metarepo, "init", "alpha")
+        assert (metarepo / "projects" / "alpha" / ".github" / "skills").is_dir()
+        link = metarepo / ".github" / "skills" / "project"
+        assert link.is_symlink()
+        assert not (metarepo / ".claude" / "skills" / "project").exists()
+
+    def test_codex_tool_via_env(self, metarepo):
+        run(metarepo, "init", "alpha", env={"BMAD_AGENT_TOOL": "codex"})
+        assert (metarepo / "projects" / "alpha" / ".codex" / "skills").is_dir()
+        assert (metarepo / ".codex" / "skills" / "project").is_symlink()
+
+    def test_env_beats_config(self, metarepo):
+        (metarepo / "_bmad" / "bmm" / "config.yaml").write_text(
+            'agent_tool: "github-copilot"\n'
+        )
+        run(metarepo, "init", "alpha", env={"BMAD_AGENT_TOOL": "codex"})
+        assert (metarepo / ".codex" / "skills" / "project").is_symlink()
+        assert not (metarepo / ".github" / "skills" / "project").exists()
+
+    def test_unknown_tool_falls_back_to_agents(self, metarepo):
+        run(metarepo, "init", "alpha", env={"BMAD_AGENT_TOOL": "mystery-ide"})
+        assert (metarepo / ".agents" / "skills" / "project").is_symlink()
+        assert (metarepo / "projects" / "alpha" / ".agents" / "skills").is_dir()
+
+    def test_config_reports_tool(self, metarepo):
+        run(metarepo, "init", "alpha", env={"BMAD_AGENT_TOOL": "github-copilot"})
+        result = run(metarepo, "config", env={"BMAD_AGENT_TOOL": "github-copilot"})
+        assert "github-copilot" in result.stdout
+        assert ".github/skills" in result.stdout
 
 
 # ── List / Current ───────────────────────────────────────────────────────────
@@ -299,6 +500,16 @@ class TestCurrent:
         result = run(metarepo, "current")
         assert "Mismatch" in result.stdout
 
+    def test_reports_active_skill_count(self, metarepo):
+        # `current` counts skills through the .../project symlink; find needs -L
+        # to descend into it, otherwise it reports 0 for a populated project.
+        run(metarepo, "init", "alpha")
+        add_project_skill(metarepo, "alpha", "s1")
+        add_project_skill(metarepo, "alpha", "s2")
+        run(metarepo, "switch", "alpha")
+        result = run(metarepo, "current")
+        assert "2 skill(s)" in result.stdout
+
 
 # ── Validate ─────────────────────────────────────────────────────────────────
 
@@ -313,10 +524,11 @@ class TestValidate:
         result = run(metarepo, "validate")
         assert "docs symlink" in result.stdout
 
-    def test_checks_agents_dir(self, metarepo):
+    def test_checks_tool_home_dir(self, metarepo):
         run(metarepo, "init", "alpha")
         result = run(metarepo, "validate")
-        assert ".agents/" in result.stdout
+        assert ".claude/ (agent tool home)" in result.stdout
+        assert ".claude/knowledge/ (shared)" in result.stdout
 
     def test_checks_agent_md(self, metarepo):
         os.remove(metarepo / "AGENTS.md")
@@ -441,7 +653,11 @@ class TestEdgeCases:
 
     def test_all_symlinks_relative(self, metarepo):
         run(metarepo, "init", "alpha")
-        for link in [metarepo / "features", metarepo / "docs", metarepo / ".agents" / "skills" / "project"]:
+        for link in [
+            metarepo / "features", metarepo / "docs",
+            metarepo / "repos", metarepo / "implementation",
+            metarepo / ".claude" / "skills" / "project",
+        ]:
             assert not os.path.isabs(os.readlink(link)), f"{link} should be relative"
 
     def test_many_projects(self, metarepo):

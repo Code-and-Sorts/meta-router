@@ -44,12 +44,14 @@ jobs:
 
       - name: Detect changed projects
         id: detect
+        env:
+          INPUT_PROJECT: ${{ inputs.project }}
         run: |
-          if [ -n "${{ inputs.project }}" ]; then
-            echo "projects=${{ inputs.project }}" >> "$GITHUB_OUTPUT"
+          if [ -n "$INPUT_PROJECT" ]; then
+            echo "projects=$INPUT_PROJECT" >> "$GITHUB_OUTPUT"
           else
             # Find which projects had sprint-status.yaml changes
-            CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'projects/**/sprint-status.yaml' \
+            CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'projects/**/implementation-artifacts/sprint-status.yaml' \
               | sed 's|^projects/||' | cut -d/ -f1 | sort -u | tr '\n' ' ')
             echo "projects=$CHANGED" >> "$GITHUB_OUTPUT"
           fi
@@ -58,8 +60,9 @@ jobs:
         if: steps.detect.outputs.projects != ''
         env:
           GH_TOKEN: ${{ secrets.BMAD_ISSUES_TOKEN || secrets.GITHUB_TOKEN }}
+          PROJECTS: ${{ steps.detect.outputs.projects }}
         run: |
-          for project in ${{ steps.detect.outputs.projects }}; do
+          for project in $PROJECTS; do
             echo "── Syncing: $project ──"
 
             # Skip if no sync config

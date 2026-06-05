@@ -1,0 +1,14 @@
+# GitHub Issues sync configuration for the "alpha" example project.
+#
+# For the live showcase, issues are created in this very repo so the feature is
+# testable end-to-end. In a real metarepo this would point at alpha's own source repo.
+repo: Code-and-Sorts/bmad-router
+
+labels:
+  epic: epic
+  story: story
+  bug: bug
+
+# Milestones are off for the demo (set to "Sprint" to group issues by sprint;
+# the milestone must exist in the target repo or it's skipped with a warning).
+milestone_prefix: ""

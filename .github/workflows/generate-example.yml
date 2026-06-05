@@ -65,6 +65,11 @@ jobs:
               cp -R "examples/seed/$proj/." "$GEN/projects/$proj/"
             fi
           done
+          # Overlay a filled-in overall shared context over the seeded template
+          # (default tool is claude-code, so knowledge lives in .claude/knowledge/).
+          if [ -d "examples/seed/knowledge" ]; then
+            cp -R "examples/seed/knowledge/." "$GEN/.claude/knowledge/"
+          fi
 
       - name: Run the example project's CI (shellcheck)
         env:

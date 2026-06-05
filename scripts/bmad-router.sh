@@ -799,6 +799,13 @@ cmd_config() {
   echo -e "  docs folder:         ${GREEN}$DOCS_FOLDER_NAME${NC}"
   echo -e "  agent tool:          ${GREEN}$AGENT_TOOL${NC} ${DIM}(skills: $SKILLS_BASE/)${NC}"
 
+  # Overall shared context (org-wide, all projects)
+  if [[ -f "$REPO_ROOT/$KNOWLEDGE_BASE/shared-context.md" ]]; then
+    echo -e "  shared context:      ${GREEN}$KNOWLEDGE_BASE/shared-context.md${NC} ${DIM}(present)${NC}"
+  else
+    echo -e "  shared context:      ${DIM}$KNOWLEDGE_BASE/shared-context.md (not seeded)${NC}"
+  fi
+
   # Source for agent tool
   if [[ -n "${BMAD_AGENT_TOOL:-}" ]]; then
     echo -e "  tool source:         ${DIM}BMAD_AGENT_TOOL env var${NC}"
@@ -902,6 +909,15 @@ cmd_validate() {
     ok "$KNOWLEDGE_BASE/ (shared)"
   else
     info "$KNOWLEDGE_BASE/ not found (optional)"
+  fi
+
+  # Overall shared context (org-wide, loaded before every workflow). Optional:
+  # seeded by setup.sh, so a metarepo that predates it (or wasn't bootstrapped
+  # by setup) simply hasn't got one yet — not an error.
+  if [[ -f "$REPO_ROOT/$KNOWLEDGE_BASE/shared-context.md" ]]; then
+    ok "$KNOWLEDGE_BASE/shared-context.md (shared context)"
+  else
+    info "$KNOWLEDGE_BASE/shared-context.md not found (run setup.sh to seed)"
   fi
 
   # Output symlink

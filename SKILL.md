@@ -30,6 +30,7 @@ metarepo/
 │   │   ├── router-project-switch/      # Always-active skill (flat, not nested)
 │   │   └── project -> ...              # Per-project skills symlink
 │   └── knowledge/                      # Shared docs (all projects)
+│       └── shared-context.md           # Overall shared context (all projects)
 ├── projects/
 │   ├── project-a/
 │   │   ├── features/                   # BMAD output artifacts
@@ -102,6 +103,14 @@ Always-active skills (like `router-project-switch`) live directly at
 The agent tool's `knowledge/` directory (`.claude/knowledge/` for Claude Code by
 default — see Config Resolution) contains documentation that applies across all
 projects (org standards, shared patterns, review checklists). Always available.
+
+Its `shared-context.md` is the **overall shared context** — a first-class,
+org-wide context file that applies to every project, symmetric in role to a
+project's `project-context.md`. Agents read it before every workflow alongside
+the active project's `project-context.md`; project context overrides shared
+context on conflict. BMAD loads it deterministically via a `persistent_facts`
+`file:` reference in `_bmad/custom/bmad-dev-story.toml` and
+`bmad-create-story.toml` (the same mechanism that loads `worktree-workflow.md`).
 
 ## Source Repos and Worktrees
 

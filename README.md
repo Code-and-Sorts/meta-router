@@ -8,10 +8,10 @@ BMAD assumes one project per repo. If several projects share the same agents and
 
 ## Quick start
 
-Requirements: Node.js (for BMAD), git, bash.
+Requirements: Node.js ≥ 20 (for BMAD), git, bash.
 
 ```bash
-git clone <this-repo> bmad-router
+git clone https://github.com/Code-and-Sorts/bmad-router bmad-router
 bash bmad-router/setup.sh my-metarepo
 ```
 

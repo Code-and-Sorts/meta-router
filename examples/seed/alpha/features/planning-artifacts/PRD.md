@@ -6,7 +6,7 @@
 ## Summary
 
 Alpha is a small task tracker. Users create tasks, assign them, and mark them
-done. It exists to demonstrate a full-stack BMAD project whose stories span both
+done. It exists to demonstrate a full-stack BMad project whose stories span both
 a web front end and a GraphQL API.
 
 ## Goals

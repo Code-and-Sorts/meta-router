@@ -1,7 +1,7 @@
 name: Generate example branch
 
 # Two sequential jobs:
-#   1. generate     — regenerate a full example metarepo (real BMAD install),
+#   1. generate     — regenerate a full example metarepo (real BMad install),
 #                     run the metarepo's own CI, and force-push it to `example`.
 #   2. sync-issues  — after the branch is updated, run the issue sync (the same
 #                     bmad-issues.py the sync-issues Action uses) against the

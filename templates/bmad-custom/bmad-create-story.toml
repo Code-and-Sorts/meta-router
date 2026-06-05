@@ -1,10 +1,10 @@
-# bmad-router override for the BMAD `bmad-create-story` skill.
+# bmad-router override for the BMad `bmad-create-story` skill.
 #
 # Copied into _bmad/custom/bmad-create-story.toml by setup.sh. Sparse,
 # committed (team-scope) override; arrays append to the skill defaults.
 #
 # Purpose: every story must declare which source repos it touches, so the
-# dev-story workflow can create the right git worktrees. BMAD has no native
+# dev-story workflow can create the right git worktrees. BMad has no native
 # "affected repos" field, so we instruct the Scrum Master agent to add a
 # structured '## Affected Repos' section to each story it writes.
 

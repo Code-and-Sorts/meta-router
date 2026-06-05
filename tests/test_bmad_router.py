@@ -1,5 +1,5 @@
 """
-Tests for bmad-router.sh — multi-project context switcher for BMAD metarepos.
+Tests for bmad-router.sh — multi-project context switcher for BMad metarepos.
 Default output folder: "features". Default docs folder: "docs".
 """
 
@@ -332,6 +332,20 @@ class TestSwitch:
         assert (metarepo / "projects" / "bare" / "features" / "planning-artifacts").is_dir()
         assert (metarepo / "projects" / "bare" / "docs").is_dir()
 
+    def test_fresh_clone_creates_gitignored_dirs(self, metarepo):
+        """A fresh clone has committed output/docs but no gitignored repos/ or
+        implementation/ dirs — switch must create them, not dangle symlinks."""
+        run(metarepo, "init", "alpha")
+        for link in ("features", "docs", "repos", "implementation"):
+            os.remove(metarepo / link)
+        shutil.rmtree(metarepo / "projects" / "alpha" / "repos")
+        shutil.rmtree(metarepo / "projects" / "alpha" / "implementation")
+
+        run(metarepo, "switch", "alpha")
+        for link in ("features", "docs", "repos", "implementation"):
+            assert (metarepo / link).is_symlink()
+            assert (metarepo / link).is_dir(), f"{link} symlink is dangling"
+
 
 # ── Docs routing ─────────────────────────────────────────────────────────────
 
@@ -500,6 +514,15 @@ class TestCurrent:
         result = run(metarepo, "current")
         assert "Mismatch" in result.stdout
 
+    def test_hints_switch_when_symlinks_missing(self, metarepo):
+        """Fresh clone: active-project.txt is committed but symlinks are not."""
+        run(metarepo, "init", "alpha")
+        for link in ("features", "docs", "repos", "implementation"):
+            os.remove(metarepo / link)
+        result = run(metarepo, "current")
+        assert "no symlinks exist" in result.stdout
+        assert "switch alpha" in result.stdout
+
     def test_reports_active_skill_count(self, metarepo):
         # `current` counts skills through the .../project symlink; find needs -L
         # to descend into it, otherwise it reports 0 for a populated project.
@@ -544,6 +567,19 @@ class TestValidate:
         run(metarepo, "init", "alpha")
         shutil.rmtree(metarepo / "projects" / "alpha" / "features")
         result = run(metarepo, "validate", expect_fail=True)
+        assert "BROKEN" in result.stdout
+
+    def test_checks_repos_and_implementation_symlinks(self, metarepo):
+        run(metarepo, "init", "alpha")
+        result = run(metarepo, "validate")
+        assert "repos symlink" in result.stdout
+        assert "implementation symlink" in result.stdout
+
+    def test_broken_repos_symlink(self, metarepo):
+        run(metarepo, "init", "alpha")
+        shutil.rmtree(metarepo / "projects" / "alpha" / "repos")
+        result = run(metarepo, "validate", expect_fail=True)
+        assert "repos symlink" in result.stdout
         assert "BROKEN" in result.stdout
 
     def test_passes_without_shared_context(self, metarepo):

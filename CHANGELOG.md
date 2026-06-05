@@ -21,6 +21,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 
 - **Project-switch skill renamed to `router-project-switch`** — the always-active skill that switches the active project is now named `router-project-switch` (previously `project-switch`) for clarity and to avoid name collisions.
-- **Setup repoints BMAD artifact dirs** — setup now writes `planning_artifacts` and `implementation_artifacts` in `_bmad/bmm/config.yaml` to the chosen output folder, so BMAD commands land in the right place without manual config.
-- **Output folder default is `features`** — the default output folder is `features` rather than BMAD's built-in `_bmad-output`, which reads better in a metarepo context.
+- **Setup repoints BMad artifact dirs** — setup now writes `planning_artifacts` and `implementation_artifacts` in `_bmad/bmm/config.yaml` to the chosen output folder, so BMad commands land in the right place without manual config.
+- **Output folder default is `features`** — the default output folder is `features` rather than BMad's built-in `_bmad-output`, which reads better in a metarepo context.
 - **`repos/` and `implementation/` symlinks added to root** — the symlink table now includes `repos/` and `implementation/` alongside `features/` and `docs/`.

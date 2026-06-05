@@ -1,12 +1,12 @@
 # Shared Context
 
-<!-- Read by BMAD agents before every workflow, for every project, alongside the
+<!-- Read by BMad agents before every workflow, for every project, alongside the
      active project's project-context.md. Project context wins on conflict. -->
 
 ## Overview
 
 - **Organization / Team**: Acme Apps
-- **Mission**: Ship small, well-tested full-stack products that share one BMAD core.
+- **Mission**: Ship small, well-tested full-stack products that share one BMad core.
 - **Scope**: Conventions here apply to every project under projects/ (alpha, beta, ...).
 
 ## Org-wide Tech Standards

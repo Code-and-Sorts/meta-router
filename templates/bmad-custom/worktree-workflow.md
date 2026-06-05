@@ -3,7 +3,7 @@
 This file is loaded as a persistent fact by the `bmad-dev-story` skill (via
 `_bmad/custom/bmad-dev-story.toml`). It defines how source repositories and
 per-story git worktrees are managed in a bmad-router metarepo. Follow it when
-implementing any BMAD story.
+implementing any BMad story.
 
 ## Layout
 

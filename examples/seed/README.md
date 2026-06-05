@@ -2,7 +2,7 @@
 
 Curated content overlaid onto a freshly generated metarepo to produce the
 [`example` branch](../../../tree/example). The `generate-example` GitHub workflow
-runs `setup.sh` (a real BMAD install), then copies each `examples/seed/<project>/`
+runs `setup.sh` (a real BMad install), then copies each `examples/seed/<project>/`
 tree over the matching scaffolded `projects/<project>/` so the published example
 has realistic artifacts.
 

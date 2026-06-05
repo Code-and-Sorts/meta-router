@@ -1,21 +1,21 @@
 # bmad-router
 
-Run multiple [BMad Method](https://github.com/bmad-code-org/BMAD-METHOD) projects out of one repo. One shared `_bmad/` core, one project active at a time, switched with a symlink swap.
+Run multiple [BMad Method](https://github.com/bmad-code-org/BMad-METHOD) projects out of one repo. One shared `_bmad/` core, one project active at a time, switched with a symlink swap.
 
-BMAD assumes one project per repo. If several projects share the same agents and workflows, you'd otherwise duplicate `_bmad/` everywhere. This keeps a single core and isolates each project's artifacts.
+BMad assumes one project per repo. If several projects share the same agents and workflows, you'd otherwise duplicate `_bmad/` everywhere. This keeps a single core and isolates each project's artifacts.
 
 [Browse a live example →](https://github.com/Code-and-Sorts/bmad-router/tree/example) — a generated metarepo with two projects, sample artifacts, and the worktree setup. Regenerated on every push to `main`.
 
 ## Quick start
 
-Requirements: Node.js ≥ 20 (for BMAD), git, bash.
+Requirements: Node.js ≥ 20 (for BMad), git, bash.
 
 ```bash
 git clone https://github.com/Code-and-Sorts/bmad-router bmad-router
 bash bmad-router/setup.sh my-metarepo
 ```
 
-Setup asks four things — output folder name (default `features`), docs folder name (default `docs`), which agent tool you use (Claude Code, GitHub Copilot, or Codex), and which projects to create — then installs BMAD and scaffolds everything. After that:
+Setup asks four things — output folder name (default `features`), docs folder name (default `docs`), which agent tool you use (Claude Code, GitHub Copilot, or Codex), and which projects to create — then installs BMad and scaffolds everything. After that:
 
 ```bash
 cd my-metarepo
@@ -37,7 +37,7 @@ BMAD_SETUP_NONINTERACTIVE=1 \
 
 ## What switching does
 
-`switch <project>` repoints symlinks at the repo root and writes `active-project.txt`. BMAD reads and writes through them unchanged — nothing is copied or deleted.
+`switch <project>` repoints symlinks at the repo root and writes `active-project.txt`. BMad reads and writes through them unchanged — nothing is copied or deleted.
 
 | Symlink | points to |
 | --- | --- |
@@ -47,14 +47,14 @@ BMAD_SETUP_NONINTERACTIVE=1 \
 | `repos/` | `projects/<project>/repos/` |
 | `implementation/` | `projects/<project>/implementation/` |
 
-Context comes in two tiers: **overall shared context** (`<tool-home>/knowledge/shared-context.md`) holds org-wide standards that apply to every project and is global — it does *not* change on switch; each project's **`project-context.md`** holds its own conventions and overrides the shared context on conflict. Agents read both before every workflow (BMAD loads the shared one via `_bmad/custom/` `persistent_facts`).
+Context comes in two tiers: **overall shared context** (`<tool-home>/knowledge/shared-context.md`) holds org-wide standards that apply to every project and is global — it does *not* change on switch; each project's **`project-context.md`** holds its own conventions and overrides the shared context on conflict. Agents read both before every workflow (BMad loads the shared one via `_bmad/custom/` `persistent_facts`).
 
 ## Layout
 
 ![File structure](docs/images/02-tree.png)
 
-- `_bmad/` — shared BMAD core (agents, workflows, tasks), installed once.
-- `projects/<name>/features/` — that project's BMAD output: PRD, architecture, epics, stories, sprint status, `project-context.md`.
+- `_bmad/` — shared BMad core (agents, workflows, tasks), installed once.
+- `projects/<name>/features/` — that project's BMad output: PRD, architecture, epics, stories, sprint status, `project-context.md`.
 - `projects/<name>/docs/` — that project's `project_knowledge`.
 - `projects/<name>/<tool-home>/skills/` — agent skills that activate only when the project is switched in.
 - `<tool-home>/skills/<name>/` — always-active skills (e.g. `router-project-switch`).
@@ -97,7 +97,7 @@ Folder names and the agent tool resolve in order: **env var → `_bmad/bmm/confi
 | Docs folder | `BMAD_DOCS_FOLDER` | `project_knowledge` | `docs` |
 | Agent tool | `BMAD_AGENT_TOOL` | `agent_tool` | `claude-code` |
 
-The agent tool sets where skills and shared knowledge live: `.claude/` (Claude Code), `.github/` (Copilot), `.codex/` (Codex). Setup also points BMAD's `planning_artifacts` / `implementation_artifacts` at your output folder.
+The agent tool sets where skills and shared knowledge live: `.claude/` (Claude Code), `.github/` (Copilot), `.codex/` (Codex). Setup also points BMad's `planning_artifacts` / `implementation_artifacts` at your output folder.
 
 ## Source repos and worktrees
 
@@ -122,7 +122,7 @@ bash scripts/bmad-router.sh worktree-rm STORY-001        # tear down
 
 Worktrees land at `projects/<name>/implementation/<story-id>/<repo>/` (gitignored), each on branch `story/<story-id>`. A full-stack story can span several repos at once.
 
-Setup wires this into BMAD through `_bmad/custom/`: the scrum master adds an `## Affected Repos` section to each story, and the dev agent reads it to create the worktrees before implementing. See `_bmad/custom/worktree-workflow.md`.
+Setup wires this into BMad through `_bmad/custom/`: the scrum master adds an `## Affected Repos` section to each story, and the dev agent reads it to create the worktrees before implementing. See `_bmad/custom/worktree-workflow.md`.
 
 ## GitHub Issues sync (optional)
 
@@ -145,8 +145,8 @@ Status mapping: `draft`/`backlog`/`deferred` → skipped, `ready`/`todo`/`planne
 - **Symlinks on Windows** need `core.symlinks=true` (WSL works out of the box).
 - **All symlinks move together** — no split-brain where output and docs point at different projects.
 - **Source is gitignored** — clones (`projects/*/repos/`) and worktrees (`projects/*/implementation/`) aren't tracked; remove those `.gitignore` lines if you want them in.
-- **One BMAD version** for all projects, since they share `_bmad/`.
-- **Default output folder is `features`, not BMAD's `_bmad-output`** — reads better in a metarepo. Change it during setup or in `config.yaml`.
+- **One BMad version** for all projects, since they share `_bmad/`.
+- **Default output folder is `features`, not BMad's `_bmad-output`** — reads better in a metarepo. Change it during setup or in `config.yaml`.
 
 ## Tests
 
@@ -169,7 +169,7 @@ bmad-router/
 │   ├── .github/workflows/
 │   │   ├── ci.yml                  # Metarepo CI (shellcheck), installed into each metarepo
 │   │   └── sync-issues.yml         # GitHub Action (optional)
-│   ├── bmad-custom/                # BMAD overrides → _bmad/custom/
+│   ├── bmad-custom/                # BMad overrides → _bmad/custom/
 │   │   ├── bmad-dev-story.toml     #   create per-story worktrees on implement
 │   │   ├── bmad-create-story.toml  #   add "## Affected Repos" to stories
 │   │   └── worktree-workflow.md    #   the worktree procedure (loaded as context)

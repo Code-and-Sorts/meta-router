@@ -10,7 +10,7 @@ __pycache__/
 .idea/
 .vscode/
 
-# Node (npx/BMAD installer may create this)
+# Node (npx/BMad installer may create this)
 node_modules/
 
 # Local scratch / test output (generated metarepos from manual testing)

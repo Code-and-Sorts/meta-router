@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-bmad-issues.py — Sync BMAD sprint stories to GitHub Issues.
+bmad-issues.py — Sync BMad sprint stories to GitHub Issues.
 
 Reads sprint-status.yaml from the active (or specified) project, creates
 or updates GitHub Issues in the configured target repo, and writes issue
@@ -553,7 +553,7 @@ def cmd_status(project_name):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Sync BMAD sprint stories to GitHub Issues")
+    parser = argparse.ArgumentParser(description="Sync BMad sprint stories to GitHub Issues")
     parser.add_argument("command", nargs="?", default="sync", choices=["sync", "status"])
     parser.add_argument("--project", "-p", help="Project name (default: active project)")
     parser.add_argument("--dry-run", "-n", action="store_true", help="Show what would happen")

@@ -410,6 +410,14 @@ swap_symlink() {
 switch_all_symlinks() {
   local project_name="$1"
 
+  # Ensure every symlink target exists — on a fresh clone the gitignored
+  # repos/ and implementation/ dirs are absent and would leave dangling links.
+  mkdir -p \
+    "$(project_output "$project_name")" \
+    "$(project_docs "$project_name")" \
+    "$(project_repos_dir "$project_name")" \
+    "$(project_impl_dir "$project_name")"
+
   # Output folder
   swap_symlink "$(symlink_path)" "projects/$project_name/$OUTPUT_FOLDER_NAME" "$OUTPUT_FOLDER_NAME"
 
@@ -537,6 +545,12 @@ cmd_current() {
   if [[ -n "$active" && -n "$symlink_target" && "$active" != "$symlink_target" ]]; then
     warn "Mismatch: active-project.txt says '${active}' but symlink points to '${symlink_target}'"
     info "Run ${BOLD}bmad-router switch $active${NC} to fix."
+    return
+  fi
+
+  if [[ -n "$active" && -z "$symlink_target" ]]; then
+    warn "active-project.txt says '${active}' but no symlinks exist (fresh clone?)"
+    info "Run ${BOLD}bmad-router switch $active${NC} to create them."
     return
   fi
 
@@ -949,6 +963,24 @@ cmd_validate() {
   else
     warn "$DOCS_FOLDER_NAME symlink missing"; errors=$((errors + 1))
   fi
+
+  # Root repos + implementation symlinks
+  local root_link
+  for root_link in "$(repos_symlink)" "$(impl_symlink)"; do
+    local link_name
+    link_name="$(basename "$root_link")"
+    if [[ -L "$root_link" ]]; then
+      if [[ -d "$root_link" ]]; then
+        ok "$link_name symlink → $(readlink "$root_link") (valid)"
+      else
+        warn "$link_name symlink → $(readlink "$root_link") (BROKEN)"; errors=$((errors + 1))
+      fi
+    elif [[ -e "$root_link" ]]; then
+      warn "$link_name is a real directory, not a symlink"; errors=$((errors + 1))
+    else
+      warn "$link_name symlink missing"; errors=$((errors + 1))
+    fi
+  done
 
   # Skills symlink
   if [[ -L "$SKILLS_PROJECT_LINK" ]]; then

@@ -310,10 +310,14 @@ YAML
   ok "Created config.yaml with custom folder names"
 fi
 
-# Remove installer-created output dir if present (router manages it as symlink)
+# Remove installer-created output dir if present (router manages it as symlink).
+# The installer scaffolds _bmad-output/{planning,implementation}-artifacts/ as
+# empty dirs; since we repoint those artifact paths at the chosen output folder,
+# that skeleton is orphaned. Match on files only (-type f) so a tree of empty
+# dirs still counts as removable.
 for candidate in _bmad-output "$USER_OUTPUT_FOLDER"; do
   if [[ -d "$candidate" && ! -L "$candidate" ]]; then
-    local_files=$(find "$candidate" -not -name '.gitkeep' -not -path "$candidate" | head -1)
+    local_files=$(find "$candidate" -type f -not -name '.gitkeep' | head -1)
     if [[ -z "$local_files" ]]; then
       rm -rf "$candidate"
       info "Removed empty $candidate/ (router will manage as symlink)"
@@ -323,7 +327,7 @@ done
 
 # Same for docs
 if [[ -d "$USER_DOCS_FOLDER" && ! -L "$USER_DOCS_FOLDER" ]]; then
-  local_files=$(find "$USER_DOCS_FOLDER" -not -name '.gitkeep' -not -path "$USER_DOCS_FOLDER" | head -1)
+  local_files=$(find "$USER_DOCS_FOLDER" -type f -not -name '.gitkeep' | head -1)
   if [[ -z "$local_files" ]]; then
     rm -rf "$USER_DOCS_FOLDER"
     info "Removed empty $USER_DOCS_FOLDER/ (router will manage as symlink)"

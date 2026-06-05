@@ -562,7 +562,9 @@ cmd_current() {
 
   if [[ -L "$SKILLS_PROJECT_LINK" ]]; then
     local skill_count
-    skill_count=$(find "$SKILLS_PROJECT_LINK" -name 'SKILL.md' 2>/dev/null | wc -l | tr -d '[:space:]')
+    # -L so find descends into the project symlink target (the start path is
+    # itself a symlink; without -L find won't enter it and counts 0).
+    skill_count=$(find -L "$SKILLS_PROJECT_LINK" -name 'SKILL.md' 2>/dev/null | wc -l | tr -d '[:space:]')
     echo -e "  ${DIM}skills: $SKILLS_BASE/project ($skill_count skill(s))${NC}"
   else
     echo -e "  ${DIM}skills: no project-specific skills${NC}"

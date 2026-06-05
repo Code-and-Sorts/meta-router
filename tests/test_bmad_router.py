@@ -500,6 +500,16 @@ class TestCurrent:
         result = run(metarepo, "current")
         assert "Mismatch" in result.stdout
 
+    def test_reports_active_skill_count(self, metarepo):
+        # `current` counts skills through the .../project symlink; find needs -L
+        # to descend into it, otherwise it reports 0 for a populated project.
+        run(metarepo, "init", "alpha")
+        add_project_skill(metarepo, "alpha", "s1")
+        add_project_skill(metarepo, "alpha", "s2")
+        run(metarepo, "switch", "alpha")
+        result = run(metarepo, "current")
+        assert "2 skill(s)" in result.stdout
+
 
 # ── Validate ─────────────────────────────────────────────────────────────────
 

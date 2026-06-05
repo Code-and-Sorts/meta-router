@@ -5,22 +5,25 @@ description: >
   user says "switch project", "switch to <project>", "bmad-router", "change project context",
   "list projects", "which project", "active project", "current project", or references working on
   a different project within the metarepo. Also trigger when a BMAD workflow targets the wrong
-  project or a symlink is missing/broken. Manages three symlinks: output folder (features by
-  default), docs folder, and project-specific agent skills.
+  project or a symlink is missing/broken. Manages five symlinks: output folder (features by
+  default), docs folder, source-repo clones (`repos/`), per-story worktrees (`implementation/`), and project-specific agent skills.
 ---
 
 # router-project-switch
 
-Manages multi-project context switching in a BMAD metarepo by routing three
-symlinks to the active project: output folder, docs, and agent skills.
+Manages multi-project context switching in a BMAD metarepo by routing five
+symlinks to the active project: output folder, docs, source-repo clones
+(`repos/`), per-story worktrees (`implementation/`), and agent skills.
 
 ## Architecture
 
 ```
 metarepo/
 ├── _bmad/                              # Shared core
-├── features -> projects/X/features     # Output symlink (configurable name)
-├── docs -> projects/X/docs             # Docs symlink (configurable name)
+├── features -> projects/X/features             # Output symlink (configurable name)
+├── docs -> projects/X/docs                     # Docs symlink (configurable name)
+├── repos -> projects/X/repos                   # Source repo clones (active project)
+├── implementation -> projects/X/implementation  # Per-story worktrees (active project)
 ├── active-project.txt
 ├── .claude/                            # Agent tool home — tool-specific dir (see below)
 │   ├── skills/
@@ -73,7 +76,7 @@ An unrecognized tool falls back to the tool-agnostic `.agents/` home.
 
 | Command | Description |
 |---|---|
-| `switch <name>` | Switch all three symlinks to the named project |
+| `switch <name>` | Switch all five symlinks to the named project |
 | `list` | Show all projects with skill counts |
 | `current` | Show active project and symlink targets |
 | `init <name>` | Scaffold a new project and switch to it |

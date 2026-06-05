@@ -4,10 +4,12 @@ set -euo pipefail
 # ─────────────────────────────────────────────────────────────────────────────
 # bmad-router.sh — Multi-project context switcher for BMAD metarepos
 # ─────────────────────────────────────────────────────────────────────────────
-# Manages three symlinks per project switch:
-#   1. Output folder (features, PRDs, epics, stories)
-#   2. Project docs  (project_knowledge — ADRs, specs, domain docs)
-#   3. Project skills (agent skills specific to one project)
+# Manages five symlinks per project switch:
+#   1. Output folder      (features, PRDs, epics, stories)
+#   2. Project docs       (project_knowledge — ADRs, specs, domain docs)
+#   3. repos              (git clones of the project's source repos)
+#   4. implementation     (per-story git worktrees)
+#   5. Project skills     (agent skills specific to one project)
 #
 # Agent skills and shared knowledge live in the active tool's home directory
 # (.claude for Claude Code, .github for GitHub Copilot, .codex for Codex),
@@ -165,7 +167,7 @@ project_impl_dir()   { echo "$PROJECTS_DIR/$1/implementation"; }
 
 get_active_project() {
   if [[ -f "$ACTIVE_FILE" ]]; then
-    cat "$ACTIVE_FILE" | tr -d '[:space:]'
+    tr -d '[:space:]' < "$ACTIVE_FILE"
   else
     echo ""
   fi
@@ -183,7 +185,8 @@ get_symlink_target() {
   local sp
   sp="$(symlink_path)"
   if [[ -L "$sp" ]]; then
-    readlink "$sp" | sed "s|^projects/||" | sed "s|/${OUTPUT_FOLDER_NAME}$||"
+    local escaped_folder="${OUTPUT_FOLDER_NAME//./\\.}"
+    readlink "$sp" | sed "s|^projects/||" | sed "s|/${escaped_folder}$||"
   else
     echo ""
   fi
@@ -615,7 +618,7 @@ cmd_repos() {
   while IFS=$'\t' read -r name url branch; do
     [[ -n "$name" ]] || continue
     found=1
-    local clonedir="$(project_repos_dir "$active")/$name"
+    local clonedir; clonedir="$(project_repos_dir "$active")/$name"
     if [[ -d "$clonedir/.git" ]]; then
       ok "$name ${DIM}($url @ $branch) [cloned]${NC}"
     else
@@ -640,7 +643,7 @@ cmd_clone() {
     [[ -n "$name" && -n "$url" ]] || continue
     [[ -n "$want" && "$want" != "$name" ]] && continue
     any=1
-    local dest="$(project_repos_dir "$active")/$name"
+    local dest; dest="$(project_repos_dir "$active")/$name"
     if [[ -d "$dest/.git" ]]; then
       info "$name already cloned"
       continue
@@ -659,10 +662,10 @@ cmd_clone() {
 # Add a single worktree for one repo of a story.
 add_worktree() {
   local active="$1" repo="$2" story="$3"
-  local clonedir="$(project_repos_dir "$active")/$repo"
+  local clonedir; clonedir="$(project_repos_dir "$active")/$repo"
   [[ -d "$clonedir/.git" ]] || die "Repo '$repo' not cloned. Run: ${BOLD}bmad-router clone $repo${NC}"
 
-  local wt="$(project_impl_dir "$active")/$story/$repo"
+  local wt; wt="$(project_impl_dir "$active")/$story/$repo"
   if [[ -e "$wt" ]]; then
     warn "worktree already exists: implementation/$story/$repo (skipping)"
     return 0
@@ -738,9 +741,10 @@ cmd_worktree_rm() {
   active="$(require_active_project)"
   local story="${1:-}"
   [[ -n "$story" ]] || die "Usage: bmad-router worktree-rm <story-id>"
+  [[ "$story" =~ ^[a-zA-Z0-9_.-]+$ ]] || die "Invalid story id: '$story'"
   command -v git &>/dev/null || die "git not found"
 
-  local story_dir="$(project_impl_dir "$active")/$story"
+  local story_dir; story_dir="$(project_impl_dir "$active")/$story"
   [[ -d "$story_dir" ]] || die "No worktrees for story '$story' (implementation/$story not found)"
 
   local removed=0
@@ -748,7 +752,7 @@ cmd_worktree_rm() {
     [[ -d "$repo_path" ]] || continue
     local repo
     repo="$(basename "$repo_path")"
-    local clonedir="$(project_repos_dir "$active")/$repo"
+    local clonedir; clonedir="$(project_repos_dir "$active")/$repo"
     if [[ -d "$clonedir/.git" ]]; then
       git -C "$clonedir" worktree remove --force "$repo_path" 2>/dev/null || rm -rf "$repo_path"
       git -C "$clonedir" worktree prune 2>/dev/null || true
@@ -766,7 +770,7 @@ cmd_worktree_rm() {
 cmd_worktree_list() {
   local active
   active="$(require_active_project)"
-  local impl="$(project_impl_dir "$active")"
+  local impl; impl="$(project_impl_dir "$active")"
 
   local printed=0
   if [[ -d "$impl" ]]; then
@@ -869,10 +873,29 @@ cmd_validate() {
   echo -e "${DIM}  output: $OUTPUT_FOLDER_NAME | docs: $DOCS_FOLDER_NAME | tool: $AGENT_TOOL (skills: $SKILLS_BASE/)${NC}"
   echo ""
 
-  [[ -d "$BMAD_CORE" ]]    && ok "_bmad/" || { warn "_bmad/ missing"; ((errors++)); }
-  [[ -d "$PROJECTS_DIR" ]] && ok "projects/" || { warn "projects/ missing"; ((errors++)); }
-  [[ -d "$REPO_ROOT/$TOOL_DIR" ]] && ok "$TOOL_DIR/ (agent tool home)" || { warn "$TOOL_DIR/ missing"; ((errors++)); }
-  [[ -f "$REPO_ROOT/AGENTS.md" ]] && ok "AGENTS.md" || { warn "AGENTS.md missing"; ((errors++)); }
+  if [[ -d "$BMAD_CORE" ]]; then
+    ok "_bmad/"
+  else
+    warn "_bmad/ missing"; errors=$((errors + 1))
+  fi
+
+  if [[ -d "$PROJECTS_DIR" ]]; then
+    ok "projects/"
+  else
+    warn "projects/ missing"; errors=$((errors + 1))
+  fi
+
+  if [[ -d "$REPO_ROOT/$TOOL_DIR" ]]; then
+    ok "$TOOL_DIR/ (agent tool home)"
+  else
+    warn "$TOOL_DIR/ missing"; errors=$((errors + 1))
+  fi
+
+  if [[ -f "$REPO_ROOT/AGENTS.md" ]]; then
+    ok "AGENTS.md"
+  else
+    warn "AGENTS.md missing"; errors=$((errors + 1))
+  fi
 
   # Shared knowledge
   if [[ -d "$REPO_ROOT/$KNOWLEDGE_BASE" ]]; then
@@ -888,12 +911,12 @@ cmd_validate() {
     if [[ -d "$sp" ]]; then
       ok "$OUTPUT_FOLDER_NAME symlink → $(readlink "$sp") (valid)"
     else
-      warn "$OUTPUT_FOLDER_NAME symlink → $(readlink "$sp") (BROKEN)"; ((errors++))
+      warn "$OUTPUT_FOLDER_NAME symlink → $(readlink "$sp") (BROKEN)"; errors=$((errors + 1))
     fi
   elif [[ -e "$sp" ]]; then
-    warn "$OUTPUT_FOLDER_NAME is a real directory, not a symlink"; ((errors++))
+    warn "$OUTPUT_FOLDER_NAME is a real directory, not a symlink"; errors=$((errors + 1))
   else
-    warn "$OUTPUT_FOLDER_NAME symlink missing"; ((errors++))
+    warn "$OUTPUT_FOLDER_NAME symlink missing"; errors=$((errors + 1))
   fi
 
   # Docs symlink
@@ -903,12 +926,12 @@ cmd_validate() {
     if [[ -d "$ds" ]]; then
       ok "$DOCS_FOLDER_NAME symlink → $(readlink "$ds") (valid)"
     else
-      warn "$DOCS_FOLDER_NAME symlink → $(readlink "$ds") (BROKEN)"; ((errors++))
+      warn "$DOCS_FOLDER_NAME symlink → $(readlink "$ds") (BROKEN)"; errors=$((errors + 1))
     fi
   elif [[ -e "$ds" ]]; then
-    warn "$DOCS_FOLDER_NAME is a real directory, not a symlink"; ((errors++))
+    warn "$DOCS_FOLDER_NAME is a real directory, not a symlink"; errors=$((errors + 1))
   else
-    warn "$DOCS_FOLDER_NAME symlink missing"; ((errors++))
+    warn "$DOCS_FOLDER_NAME symlink missing"; errors=$((errors + 1))
   fi
 
   # Skills symlink
@@ -916,10 +939,10 @@ cmd_validate() {
     if [[ -d "$SKILLS_PROJECT_LINK" ]]; then
       ok "$SKILLS_BASE/project symlink (valid)"
     else
-      warn "$SKILLS_BASE/project symlink (BROKEN)"; ((errors++))
+      warn "$SKILLS_BASE/project symlink (BROKEN)"; errors=$((errors + 1))
     fi
   elif [[ -e "$SKILLS_PROJECT_LINK" ]]; then
-    warn "$SKILLS_BASE/project is not a symlink"; ((errors++))
+    warn "$SKILLS_BASE/project is not a symlink"; errors=$((errors + 1))
   else
     info "$SKILLS_BASE/project not set (no project skills)"
   fi
@@ -932,10 +955,10 @@ cmd_validate() {
     local sym_target
     sym_target="$(get_symlink_target)"
     if [[ -n "$sym_target" && "$active" != "$sym_target" ]]; then
-      warn "Mismatch: active-project.txt='$active' vs symlink='$sym_target'"; ((errors++))
+      warn "Mismatch: active-project.txt='$active' vs symlink='$sym_target'"; errors=$((errors + 1))
     fi
   else
-    warn "active-project.txt missing or empty"; ((errors++))
+    warn "active-project.txt missing or empty"; errors=$((errors + 1))
   fi
 
   # Active project artifacts
@@ -944,19 +967,39 @@ cmd_validate() {
   if [[ -n "$active" && -d "$out" ]]; then
     echo ""
     echo -e "${BOLD}Active project artifacts ($active):${NC}"
-    [[ -d "$out/planning-artifacts" ]] && ok "planning-artifacts/" || warn "planning-artifacts/ missing"
-    [[ -d "$out/planning-artifacts/epics" ]] && ok "planning-artifacts/epics/" || warn "planning-artifacts/epics/ missing"
-    [[ -d "$out/implementation-artifacts" ]] && ok "implementation-artifacts/" || warn "implementation-artifacts/ missing"
-    [[ -f "$out/project-context.md" ]] && ok "project-context.md" || warn "project-context.md missing"
+
+    if [[ -d "$out/planning-artifacts" ]]; then
+      ok "planning-artifacts/"
+    else
+      warn "planning-artifacts/ missing"
+    fi
+
+    if [[ -d "$out/planning-artifacts/epics" ]]; then
+      ok "planning-artifacts/epics/"
+    else
+      warn "planning-artifacts/epics/ missing"
+    fi
+
+    if [[ -d "$out/implementation-artifacts" ]]; then
+      ok "implementation-artifacts/"
+    else
+      warn "implementation-artifacts/ missing"
+    fi
+
+    if [[ -f "$out/project-context.md" ]]; then
+      ok "project-context.md"
+    else
+      warn "project-context.md missing"
+    fi
 
     # Source repos + worktrees (clones/worktrees are gitignored — absence is not an error)
     local repos_yaml repos_dir impl_dir
     repos_yaml="$(project_repos_yaml "$active")"
     repos_dir="$(project_repos_dir "$active")"
     impl_dir="$(project_impl_dir "$active")"
-    [[ -f "$repos_yaml" ]] && ok "repos.yaml" || info "repos.yaml not found (optional)"
-    [[ -d "$repos_dir" ]] && ok "repos/ (gitignored)" || info "repos/ not found (optional)"
-    [[ -d "$impl_dir" ]] && ok "implementation/ (gitignored)" || info "implementation/ not found (optional)"
+    if [[ -f "$repos_yaml" ]]; then ok "repos.yaml"; else info "repos.yaml not found (optional)"; fi
+    if [[ -d "$repos_dir" ]]; then ok "repos/ (gitignored)"; else info "repos/ not found (optional)"; fi
+    if [[ -d "$impl_dir" ]]; then ok "implementation/ (gitignored)"; else info "implementation/ not found (optional)"; fi
     if [[ -f "$repos_yaml" ]]; then
       local cfg_count clone_count=0 rname
       cfg_count="$(parse_repos_yaml "$repos_yaml" | grep -c . || true)"

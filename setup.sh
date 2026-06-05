@@ -187,7 +187,8 @@ else
   read -rp "  Enable issues sync? [y/N]: " USER_ISSUES_SYNC
 fi
 ENABLE_ISSUES=false
-if [[ "${USER_ISSUES_SYNC,,}" == "y" || "${USER_ISSUES_SYNC,,}" == "yes" ]]; then
+USER_ISSUES_SYNC_LC="$(printf '%s' "$USER_ISSUES_SYNC" | tr '[:upper:]' '[:lower:]')"
+if [[ "$USER_ISSUES_SYNC_LC" == "y" || "$USER_ISSUES_SYNC_LC" == "yes" ]]; then
   ENABLE_ISSUES=true
   ok "GitHub Issues sync: enabled"
 else
@@ -268,8 +269,8 @@ YAML_CFG="_bmad/bmm/config.yaml"
 if [[ -f "$YAML_CFG" ]]; then
   # Update existing config — replace or append
   # `sed -i.bak` is portable across GNU (Linux/CI) and BSD (macOS) sed.
-  if grep -qE '^\s*output_folder\s*:' "$YAML_CFG" 2>/dev/null; then
-    sed -i.bak "s|^\(\s*output_folder\s*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
+  if grep -qE '^[[:space:]]*output_folder[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
+    sed -i.bak "s|^\([[:space:]]*output_folder[[:space:]]*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
   else
     echo "output_folder: \"{project-root}/$USER_OUTPUT_FOLDER\"" >> "$YAML_CFG"
   fi
@@ -277,23 +278,23 @@ if [[ -f "$YAML_CFG" ]]; then
   # output folder (they default to the {project-root}/_bmad-output/* paths), so
   # repoint them at the chosen output folder too — otherwise BMAD writes those
   # artifacts to _bmad-output/ while the router routes the renamed folder.
-  if grep -qE '^\s*planning_artifacts\s*:' "$YAML_CFG" 2>/dev/null; then
-    sed -i.bak "s|^\(\s*planning_artifacts\s*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER/planning-artifacts\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
+  if grep -qE '^[[:space:]]*planning_artifacts[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
+    sed -i.bak "s|^\([[:space:]]*planning_artifacts[[:space:]]*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER/planning-artifacts\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
   else
     echo "planning_artifacts: \"{project-root}/$USER_OUTPUT_FOLDER/planning-artifacts\"" >> "$YAML_CFG"
   fi
-  if grep -qE '^\s*implementation_artifacts\s*:' "$YAML_CFG" 2>/dev/null; then
-    sed -i.bak "s|^\(\s*implementation_artifacts\s*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER/implementation-artifacts\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
+  if grep -qE '^[[:space:]]*implementation_artifacts[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
+    sed -i.bak "s|^\([[:space:]]*implementation_artifacts[[:space:]]*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER/implementation-artifacts\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
   else
     echo "implementation_artifacts: \"{project-root}/$USER_OUTPUT_FOLDER/implementation-artifacts\"" >> "$YAML_CFG"
   fi
-  if grep -qE '^\s*project_knowledge\s*:' "$YAML_CFG" 2>/dev/null; then
-    sed -i.bak "s|^\(\s*project_knowledge\s*:\).*|\1 \"{project-root}/$USER_DOCS_FOLDER\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
+  if grep -qE '^[[:space:]]*project_knowledge[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
+    sed -i.bak "s|^\([[:space:]]*project_knowledge[[:space:]]*:\).*|\1 \"{project-root}/$USER_DOCS_FOLDER\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
   else
     echo "project_knowledge: \"{project-root}/$USER_DOCS_FOLDER\"" >> "$YAML_CFG"
   fi
-  if grep -qE '^\s*agent_tool\s*:' "$YAML_CFG" 2>/dev/null; then
-    sed -i.bak "s|^\(\s*agent_tool\s*:\).*|\1 \"$AGENT_TOOL\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
+  if grep -qE '^[[:space:]]*agent_tool[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
+    sed -i.bak "s|^\([[:space:]]*agent_tool[[:space:]]*:\).*|\1 \"$AGENT_TOOL\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
   else
     echo "agent_tool: \"$AGENT_TOOL\"" >> "$YAML_CFG"
   fi
@@ -444,7 +445,7 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 8: Generate AGENT.md and .gitignore
+# Step 8: Generate AGENTS.md and .gitignore
 # ─────────────────────────────────────────────────────────────────────────────
 
 step 8 "Generating AGENTS.md and .gitignore"
@@ -500,7 +501,7 @@ If you're unsure what to do next, ask \`bmad-help\`.
 ## Multi-project routing
 
 This metarepo hosts multiple projects that share the same BMAD core. Each project
-has isolated artifacts, docs, and agent skills. Three symlinks at the repo root
+has isolated artifacts, docs, and agent skills. Five symlinks at the repo root
 point to the active project:
 
 | Root symlink | Points to | Contains |
@@ -508,6 +509,8 @@ point to the active project:
 | \`$USER_OUTPUT_FOLDER/\` | \`projects/<active>/$USER_OUTPUT_FOLDER/\` | PRDs, epics, stories, sprint status |
 | \`$USER_DOCS_FOLDER/\` | \`projects/<active>/$USER_DOCS_FOLDER/\` | Project knowledge (ADRs, specs) |
 | \`$SKILLS_BASE/project/\` | \`projects/<active>/$SKILLS_BASE/\` | Project-specific agent skills |
+| \`repos/\` | \`projects/<active>/repos/\` | Cloned source repos for the active project |
+| \`implementation/\` | \`projects/<active>/implementation/\` | Per-story git worktrees |
 
 ### Before starting any work
 
@@ -626,7 +629,7 @@ GITIGNORE
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 8: Create initial projects
+# Step 9: Create initial projects
 # ─────────────────────────────────────────────────────────────────────────────
 
 step 9 "Creating projects"
@@ -638,7 +641,7 @@ else
     bash scripts/bmad-router.sh init "$project"
   done
   echo ""
-  ok "Created ${#PROJECTS[@]} project(s), active: ${BOLD}${PROJECTS[-1]}${NC}"
+  ok "Created ${#PROJECTS[@]} project(s), active: ${BOLD}${PROJECTS[$((${#PROJECTS[@]}-1))]}${NC}"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────

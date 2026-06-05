@@ -5,10 +5,9 @@ Tests the parsing, collection, and writeback logic. Does NOT test
 actual GitHub API calls (those need gh CLI auth).
 """
 
-import textwrap
 from pathlib import Path
-
-import pytest
+from types import SimpleNamespace
+from unittest.mock import patch
 import yaml
 
 # Import the sync module
@@ -262,3 +261,101 @@ class TestResolveOutputFolder:
 
     def test_returns_none_when_missing(self, tmp_path):
         assert bmad_issues.resolve_output_folder(tmp_path) is None
+
+
+# ── sync_story milestone-strip regression ────────────────────────────────────
+
+
+class TestSyncStoryMilestoneStrip:
+    """Regression test for M1: milestone stripped by value equality.
+
+    Before the fix, create_args was filtered with:
+        [a for a in create_args if a != "--milestone" and a != milestone]
+
+    If the story title equalled the milestone string, that filter also
+    removed the "--title" value, leaving gh issue create without a title.
+
+    After the fix the --milestone <value> PAIR is removed by index, so
+    any other arg that happens to share the milestone's text is untouched.
+    """
+
+    def _make_story(self, title):
+        return {
+            "id": "STORY-001",
+            "title": title,
+            "status": "ready",
+            "type": "story",
+            "file": None,
+            "sprint": 1,
+            "github_issue": None,
+        }
+
+    def _make_config(self, milestone_prefix="Sprint"):
+        return {
+            "repo": "owner/repo",
+            "labels": {"story": "story"},
+            "milestone_prefix": milestone_prefix,
+        }
+
+    def test_milestone_pair_removed_but_title_survives_when_title_equals_milestone(
+        self, tmp_path
+    ):
+        """The story title equals the milestone string.
+
+        The first gh call (with --milestone) fails with a milestone error.
+        The retry must NOT strip --title's value even though it equals the
+        milestone string.
+        """
+        milestone_value = "Sprint 1"
+        story = self._make_story(milestone_value)  # title == milestone
+        config = self._make_config()
+
+        milestone_error = SimpleNamespace(
+            returncode=1,
+            stdout="",
+            stderr="could not find milestone 'Sprint 1'",
+        )
+        success_result = SimpleNamespace(
+            returncode=0,
+            stdout="https://github.com/owner/repo/issues/7\n",
+            stderr="",
+        )
+
+        captured_retry_args = []
+
+        def fake_run_gh(*args, check=True):
+            # First call — the one that includes --milestone — should fail.
+            if "--milestone" in args:
+                return milestone_error
+            # Subsequent calls (the retry) succeed; record what was passed.
+            captured_retry_args.extend(args)
+            return success_result
+
+        with patch.object(bmad_issues, "run_gh", side_effect=fake_run_gh):
+            # find_existing_issue must also be patched so we take the
+            # create-new-issue branch rather than the update branch.
+            with patch.object(bmad_issues, "find_existing_issue", return_value=None):
+                issue_num = bmad_issues.sync_story(
+                    story,
+                    project_name="test-project",
+                    project_dir=tmp_path,
+                    config=config,
+                )
+
+        assert issue_num == 7, "Expected issue #7 from the retry call"
+
+        # --milestone and its value must be absent from the retry args.
+        assert "--milestone" not in captured_retry_args
+        assert milestone_value not in captured_retry_args or (
+            "--title" in captured_retry_args
+            and captured_retry_args[captured_retry_args.index("--title") + 1]
+            == milestone_value
+        ), (
+            "The title arg should survive even though it equals the milestone value"
+        )
+
+        # More direct assertion: --title followed by the milestone_value must
+        # still be present in the retry args.
+        assert "--title" in captured_retry_args
+        title_pos = captured_retry_args.index("--title")
+        assert captured_retry_args[title_pos + 1] == milestone_value

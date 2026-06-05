@@ -359,7 +359,11 @@ def sync_story(story, project_name, project_dir, config, dry_run=False, epic_iss
             # Milestone might not exist — retry without it
             if "milestone" in stderr.lower() and milestone:
                 warn(f"Milestone '{milestone}' not found, creating without it")
-                create_args = [a for a in create_args if a != "--milestone" and a != milestone]
+                try:
+                    idx = create_args.index("--milestone")
+                    del create_args[idx:idx + 2]
+                except ValueError:
+                    pass
                 result = run_gh(*create_args)
             else:
                 warn(f"Failed to create issue for {story_id}: {stderr}")

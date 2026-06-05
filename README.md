@@ -1,10 +1,10 @@
 # bmad-router
 
-Run multiple [BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD) projects out of one repo. One shared `_bmad/` core, one project active at a time, switched with a symlink swap.
+Run multiple [BMad Method](https://github.com/bmad-code-org/BMAD-METHOD) projects out of one repo. One shared `_bmad/` core, one project active at a time, switched with a symlink swap.
 
 BMAD assumes one project per repo. If several projects share the same agents and workflows, you'd otherwise duplicate `_bmad/` everywhere. This keeps a single core and isolates each project's artifacts.
 
-[Browse a live example →](../../tree/example) — a generated metarepo with two projects, sample artifacts, and the worktree setup. Regenerated on every push to `main`.
+[Browse a live example →](https://github.com/Code-and-Sorts/bmad-router/tree/example) — a generated metarepo with two projects, sample artifacts, and the worktree setup. Regenerated on every push to `main`.
 
 ## Quick start
 
@@ -40,7 +40,7 @@ BMAD_SETUP_NONINTERACTIVE=1 \
 `switch <project>` repoints symlinks at the repo root and writes `active-project.txt`. BMAD reads and writes through them unchanged — nothing is copied or deleted.
 
 | Symlink | points to |
-|---|---|
+| --- | --- |
 | `features/` | `projects/<project>/features/` |
 | `docs/` | `projects/<project>/docs/` |
 | `.claude/skills/project/` | `projects/<project>/.claude/skills/` |
@@ -69,7 +69,7 @@ bash scripts/bmad-router.sh <command>
 ```
 
 | Command | Does |
-|---|---|
+| --- | --- |
 | `init <name>` | scaffold and switch to a new project |
 | `switch <name>` | change the active project |
 | `list` | list projects (active marked, with skill counts) |
@@ -89,7 +89,7 @@ bash scripts/bmad-router.sh <command>
 Folder names and the agent tool resolve in order: **env var → `_bmad/bmm/config.yaml` → default**. Setup writes your choices into `config.yaml`, so the router picks them up afterward.
 
 | Setting | Env var | config.yaml key | Default |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Output folder | `BMAD_OUTPUT_FOLDER` | `output_folder` | `features` |
 | Docs folder | `BMAD_DOCS_FOLDER` | `project_knowledge` | `docs` |
 | Agent tool | `BMAD_AGENT_TOOL` | `agent_tool` | `claude-code` |
@@ -156,7 +156,7 @@ Router tests in `tests/test_bmad_router.py`, issue-sync tests in `tests/test_bma
 
 ## File manifest
 
-```
+```markdown
 bmad-router/
 ├── setup.sh                        # Bootstrap a new metarepo
 ├── scripts/

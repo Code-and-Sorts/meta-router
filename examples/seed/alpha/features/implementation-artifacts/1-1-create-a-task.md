@@ -35,12 +35,12 @@ This is a full-stack story. When implemented, bmad-router creates a worktree per
 affected repo:
 
 ```
-projects/alpha/implementation/STORY-001/web/   # branch story/STORY-001
-projects/alpha/implementation/STORY-001/api/   # branch story/STORY-001
+projects/alpha/implementation/1-1-create-a-task/web/   # branch story/1-1-create-a-task
+projects/alpha/implementation/1-1-create-a-task/api/   # branch story/1-1-create-a-task
 ```
 
 Implement the web and api changes in their respective worktrees and open one PR
-per repo off the shared `story/STORY-001` branch.
+per repo off the shared `story/1-1-create-a-task` branch.
 
 ### Source tree components to touch
 

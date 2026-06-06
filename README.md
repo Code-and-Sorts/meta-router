@@ -114,31 +114,33 @@ repos:
 ```
 
 ```bash
-bash scripts/bmad-router.sh clone                        # clone all (or: clone web)
-bash scripts/bmad-router.sh worktree STORY-001 web api   # one worktree per repo
-bash scripts/bmad-router.sh worktree STORY-001 --all     # every repo
-bash scripts/bmad-router.sh worktree-rm STORY-001        # tear down
+bash scripts/bmad-router.sh clone                                  # clone all (or: clone web)
+bash scripts/bmad-router.sh worktree 1-2-account-management web api  # one worktree per repo
+bash scripts/bmad-router.sh worktree 1-2-account-management --all    # every repo
+bash scripts/bmad-router.sh worktree-rm 1-2-account-management      # tear down
 ```
 
-Worktrees land at `projects/<name>/implementation/<story-id>/<repo>/` (gitignored), each on branch `story/<story-id>`. A full-stack story can span several repos at once.
+Worktrees land at `projects/<name>/implementation/<story-id>/<repo>/` (gitignored), each on branch `story/<story-id>`. The story id is the story's `development_status` key from `sprint-status.yaml` — the GitHub sync keys PR detection off that branch name. A full-stack story can span several repos at once.
 
 Setup wires this into BMad through `_bmad/custom/`: the scrum master adds an `## Affected Repos` section to each story, and the dev agent reads it to create the worktrees before implementing. See `_bmad/custom/worktree-workflow.md`.
 
-## GitHub Issues sync (optional)
+## GitHub Issues + Projects sync (optional)
 
-Optional layer that turns ready stories into GitHub Issues. Enable it during setup (or copy `templates/.github` in later). It watches each project's `sprint-status.yaml`: stories that reach `ready` are synced to the project's repo, and issue numbers are written back. Sync is idempotent — each issue carries a hidden `<!-- bmad-sync:STORY:project -->` marker, so re-runs update rather than duplicate.
+Optional layer that mirrors each project's BMad artifacts to GitHub. Enable it during setup (or copy `templates/.github` in later). Each project gets a **private GitHub Project board** and two label-separated issue trees:
 
-Per project, add a `github-sync.yaml`:
+- **Delivery** (`bmad-delivery`): a `Delivery` root → **Feature issues (one per PRD)** → Epic issues → Story sub-issues. Epics/stories are driven by the `development_status:` map in `sprint-status.yaml`; features come from the PRD run folders (`prds/prd-*/prd.md`), with the newest PRD holding the epics (BMad generates `epics.md` from it). Native sub-issue progress bars give per-epic and per-feature rollups for free; superseded PRDs close automatically. Issues are created in the metarepo by default; set `repo:` in a project's `github-sync.yaml` to keep its issues next to the code instead.
+- **Planning** (`bmad-planning`, always in the metarepo): one `Planning: <project>` checklist issue tracking which planning artifacts (brief, PRD, UX, architecture, epics) exist — the PM/architect view, separate from the engineering board.
 
-```yaml
-repo: your-username/food-inventory
-labels: { epic: epic, story: story, bug: bug }
-milestone_prefix: Sprint
-```
+The sync is the single writer of issue state and board Status: BMad statuses map to `Backlog / Ready / In Progress / In Review / Done`, an open PR on a `story/<story-key>` branch in any `repos.yaml` repo forces `In Review`, and `done` closes the issue. Story PRs (one per affected repo) are linked onto the story issue automatically — a maintained **Pull Requests** section lists each PR with its repo and state (open/merged/closed). Stories that vanish after renumbering are closed as not-planned with a `bmad-orphaned` label, never deleted. Sync is idempotent — each issue carries a hidden `<!-- bmad-sync:key:project -->` marker, so re-runs update rather than duplicate.
 
-Create the `epic`/`story`/`bug` labels in the target repo. If it differs from the metarepo, add a PAT with `repo` scope as the `BMAD_ISSUES_TOKEN` secret; otherwise the default `GITHUB_TOKEN` works. Run locally with `python scripts/bmad-issues.py --dry-run` (needs `gh` authenticated).
+Setup, per project:
 
-Status mapping: `draft`/`backlog`/`deferred` → skipped, `ready`/`todo`/`planned`/`in-progress` → open, `done`/`complete`/`shipped`/`cancelled` → closed.
+1. Push the metarepo to GitHub (issues live there by default; optionally set `repo:` in `projects/<name>/github-sync.yaml` to use the project's source repo — any org or personal account works). Boards can live under any owner too: the bootstrap asks where (saveable as `project_owner:` in the metarepo-root `github-sync.yaml`, overridable per project).
+2. `bash scripts/bmad-github-bootstrap.sh <name>` — creates the private board, labels, and org issue types. On first run it offers to set up an org project template (name it whatever you like; the default is "BMad Project Template"): you build the views (Backlog, Epic Progress, Features, Planning — GitHub has no API for views) exactly once and every future board is copied from the template with views included. Views are visual-only: the script warns if the Backlog view is missing but never blocks on them — add or change them anytime. The chosen name is saved as `template:` in a metarepo-root `github-sync.yaml` (override per run with `BMAD_TEMPLATE_NAME`), alongside an auto-managed `template_id:` — lookups go by that immutable ID first, so renaming the template later can't break the flow. Without a template (or on user accounts, where templates aren't supported) each board gets a printed view checklist instead.
+3. Add a `BMAD_PROJECT_TOKEN` secret: PAT with **Projects read/write** + **Issues read/write** + **Pull requests read**. The default `GITHUB_TOKEN` cannot access Projects v2. If everything lives under one org, a fine-grained PAT works; if repos/boards span multiple orgs or your personal account, use a classic PAT (`project` + `repo` scopes — fine-grained PATs are single-owner) or a GitHub App installed per org.
+4. Install `templates/bmad-pr-ping.yml` into each source repo so story PRs update the board immediately (the nightly reconcile covers anything missed)
+
+Run locally with `python scripts/bmad-issues.py sync --dry-run` (needs `gh` authenticated).
 
 ## Notes
 

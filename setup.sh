@@ -14,6 +14,8 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
+AMBER='\033[38;2;255;191;0m'
+SPRING_GREEN='\033[38;2;0;255;111m'
 
 die() { echo -e "${RED}error:${NC} $*" >&2; exit 1; }
 info() { echo -e "${CYAN}→${NC} $*"; }
@@ -21,7 +23,7 @@ ok() { echo -e "${GREEN}✓${NC} $*"; }
 warn() { echo -e "${YELLOW}⚠${NC} $*"; }
 step() { echo -e "\n${BOLD}[$1/$TOTAL_STEPS] $2${NC}"; }
 
-TOTAL_STEPS=9
+TOTAL_STEPS=10
 
 # Map an agent tool to its home directory (relative to the metarepo root). Skills
 # and shared knowledge live under it (skills/ and knowledge/). Kept in sync with
@@ -41,15 +43,41 @@ tool_dir_for_tool() {
 
 NONINTERACTIVE="${BMAD_SETUP_NONINTERACTIVE:-0}"
 
-echo -e "${BOLD}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}║          BMad Metarepo Setup                                ║${NC}"
-echo -e "${BOLD}╚══════════════════════════════════════════════════════════════╝${NC}"
+# printf/cat (not echo -e) so the art's backslashes aren't escape-processed;
+# the quoted heredoc keeps the $$ runs from expanding.
+echo ""
+printf '%b' "$AMBER"
+cat <<'ART'
+ /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\
+( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )
+ > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <
+ /\_/\                                                                                                                         /\_/\
+( o.o )                                                                                                                       ( o.o )
+ > ^ <   $$$$$$$\                        $$\                                $$$$$$\             $$\                            > ^ <
+ /\_/\   $$  __$$\                       $$ |                              $$  __$$\            $$ |                           /\_/\
+( o.o )  $$ |  $$ | $$$$$$\  $$\   $$\ $$$$$$\    $$$$$$\   $$$$$$\        $$ /  \__| $$$$$$\ $$$$$$\   $$\   $$\  $$$$$$\    ( o.o )
+ > ^ <   $$$$$$$  |$$  __$$\ $$ |  $$ |\_$$  _|  $$  __$$\ $$  __$$\       \$$$$$$\  $$  __$$\\_$$  _|  $$ |  $$ |$$  __$$\    > ^ <
+ /\_/\   $$  __$$< $$ /  $$ |$$ |  $$ |  $$ |    $$$$$$$$ |$$ |  \__|       \____$$\ $$$$$$$$ | $$ |    $$ |  $$ |$$ /  $$ |   /\_/\
+( o.o )  $$ |  $$ |$$ |  $$ |$$ |  $$ |  $$ |$$\ $$   ____|$$ |            $$\   $$ |$$   ____| $$ |$$\ $$ |  $$ |$$ |  $$ |  ( o.o )
+ > ^ <   $$ |  $$ |\$$$$$$  |\$$$$$$  |  \$$$$  |\$$$$$$$\ $$ |            \$$$$$$  |\$$$$$$$\  \$$$$  |\$$$$$$  |$$$$$$$  |   > ^ <
+ /\_/\   \__|  \__| \______/  \______/    \____/  \_______|\__|             \______/  \_______|  \____/  \______/ $$  ____/    /\_/\
+( o.o )                                                                                                           $$ |        ( o.o )
+ > ^ <                                                                                                            $$ |         > ^ <
+ /\_/\                                                                                                            \__|         /\_/\
+( o.o )                                                                                                                       ( o.o )
+ > ^ <                                                                                                                         > ^ <
+ /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\
+( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )
+ > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <
+ART
+printf '%b' "$NC"
 
 # Resolve the target directory — the run's output, i.e. the folder the metarepo
 # is set up in. Precedence:
 #   positional arg  >  BMAD_SETUP_TARGET env  >  interactive prompt  >  current dir
 TARGET_INPUT="${1:-${BMAD_SETUP_TARGET:-}}"
 if [[ -z "$TARGET_INPUT" && "$NONINTERACTIVE" != 1 ]]; then
+  echo ""
   read -rp "  Directory to set up the metarepo in [.]: " TARGET_INPUT
 fi
 TARGET_INPUT="${TARGET_INPUT:-.}"
@@ -71,10 +99,12 @@ step 1 "Configuration"
 #                          positional arg, if given, still takes precedence)
 #   BMAD_OUTPUT_FOLDER     output folder name      (default: features)
 #   BMAD_DOCS_FOLDER       docs folder name        (default: docs)
-#   BMAD_SETUP_SKILL_LEVEL user skill level        (beginner|intermediate|expert; default: expert)
+#   BMAD_SETUP_SKILL_LEVEL user skill level        (beginner|intermediate|expert; default: intermediate)
 #   BMAD_SETUP_TOOL        agent tool              (claude-code|github-copilot|codex; default: claude-code)
 #   BMAD_SETUP_PROJECTS    comma-separated projects (default: none)
-#   BMAD_SETUP_ISSUES_SYNC y/n to enable sync       (default: n)
+#   BMAD_SETUP_GITHUB_SYNC y/n to enable the GitHub Issues + Projects sync
+#                          (default: n; BMAD_SETUP_ISSUES_SYNC still honored)
+#   BMAD_SETUP_VERBOSE     1 to stream the BMad installer output (default: hidden)
 if [[ "$NONINTERACTIVE" == 1 ]]; then
   info "Non-interactive mode (BMAD_SETUP_NONINTERACTIVE=1)"
 fi
@@ -119,14 +149,14 @@ ok "Docs folder: ${BOLD}$USER_DOCS_FOLDER${NC}"
 
 # BMad user skill level — controls how much agents explain concepts in chat
 if [[ "$NONINTERACTIVE" == 1 ]]; then
-  USER_SKILL_LEVEL="${BMAD_SETUP_SKILL_LEVEL:-expert}"
+  USER_SKILL_LEVEL="${BMAD_SETUP_SKILL_LEVEL:-intermediate}"
 else
   echo ""
   echo -e "  Your development experience level?"
   echo -e "  ${DIM}Affects how much BMad agents explain concepts in chat.${NC}"
   echo ""
-  read -rp "  Skill level (beginner|intermediate|expert) [expert]: " USER_SKILL_LEVEL
-  USER_SKILL_LEVEL="${USER_SKILL_LEVEL:-expert}"
+  read -rp "  Skill level (beginner|intermediate|expert) [intermediate]: " USER_SKILL_LEVEL
+  USER_SKILL_LEVEL="${USER_SKILL_LEVEL:-intermediate}"
 fi
 
 case "$USER_SKILL_LEVEL" in
@@ -194,24 +224,28 @@ else
   info "No initial projects — you can create them later with bmad-router init"
 fi
 
-# GitHub Issues sync
+# GitHub sync (Issues + Projects)
 if [[ "$NONINTERACTIVE" == 1 ]]; then
-  USER_ISSUES_SYNC="${BMAD_SETUP_ISSUES_SYNC:-n}"
+  USER_GH_PROJECTS="${BMAD_SETUP_GITHUB_SYNC:-${BMAD_SETUP_ISSUES_SYNC:-n}}"
 else
   echo ""
-  echo -e "  Enable GitHub Issues sync? This adds a GitHub Action that"
-  echo -e "  creates issues from sprint-status.yaml when stories are ready."
-  echo -e "  ${DIM}(Requires gh CLI and a GitHub repo per project)${NC}"
+  echo -e "  Enable GitHub sync? For each project, this will:"
+  echo -e "    - mirror BMad epics and stories to GitHub Issues, with native"
+  echo -e "      sub-issue progress bars per epic"
+  echo -e "    - create a ${BOLD}private${NC} GitHub Project board (Backlog / Epic Progress /"
+  echo -e "      Planning views) that updates from sprint-status.yaml and story PRs"
+  echo -e "    - add a planning checklist issue tracking PRD/architecture/epics docs"
+  echo -e "  ${DIM}(Needs the gh CLI locally; boards are created at the end of setup)${NC}"
   echo ""
-  read -rp "  Enable issues sync? [y/N]: " USER_ISSUES_SYNC
+  read -rp "  Enable GitHub sync? [y/N]: " USER_GH_PROJECTS
 fi
-ENABLE_ISSUES=false
-USER_ISSUES_SYNC_LC="$(printf '%s' "$USER_ISSUES_SYNC" | tr '[:upper:]' '[:lower:]')"
-if [[ "$USER_ISSUES_SYNC_LC" == "y" || "$USER_ISSUES_SYNC_LC" == "yes" ]]; then
-  ENABLE_ISSUES=true
-  ok "GitHub Issues sync: enabled"
+ENABLE_GH_PROJECTS=false
+USER_GH_PROJECTS_LC="$(printf '%s' "$USER_GH_PROJECTS" | tr '[:upper:]' '[:lower:]')"
+if [[ "$USER_GH_PROJECTS_LC" == "y" || "$USER_GH_PROJECTS_LC" == "yes" ]]; then
+  ENABLE_GH_PROJECTS=true
+  ok "GitHub sync: enabled"
 else
-  info "GitHub Issues sync: skipped (you can add it later)"
+  info "GitHub sync: skipped (you can add it later)"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -237,6 +271,16 @@ if command -v git &>/dev/null; then
   ok "git $(git --version | cut -d' ' -f3)"
 else
   warn "git not found — repo won't be initialized"
+fi
+
+# gh is only needed locally for bmad-github-bootstrap.sh and manual sync runs;
+# the sync workflow itself runs on GitHub-hosted runners where gh is preinstalled.
+if [[ "$ENABLE_GH_PROJECTS" == true ]]; then
+  if command -v gh &>/dev/null; then
+    ok "gh $(gh --version | head -n1 | cut -d' ' -f3)"
+  else
+    warn "gh CLI not found — needed locally for scripts/bmad-github-bootstrap.sh (https://cli.github.com)"
+  fi
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -284,8 +328,27 @@ BMAD_CONFIG_FLAGS=(
   --set "bmm.user_skill_level=$USER_SKILL_LEVEL"
 )
 
+# The installer is chatty (npm warnings, banner boxes, per-skill lines), so its
+# output goes to a log unless BMAD_SETUP_VERBOSE=1; the log tail is shown on
+# failure so errors stay debuggable.
+# Template must end in Xs — BSD mktemp (macOS) rejects suffixes after them.
+BMAD_INSTALL_LOG="$(mktemp "${TMPDIR:-/tmp}/bmad-install.XXXXXX")"
+run_bmad_installer() {
+  if [[ "${BMAD_SETUP_VERBOSE:-0}" == 1 ]]; then
+    npx bmad-method install "$@" </dev/null
+  else
+    npx bmad-method install "$@" </dev/null >"$BMAD_INSTALL_LOG" 2>&1
+  fi
+}
+print_install_log_tail() {
+  if [[ "${BMAD_SETUP_VERBOSE:-0}" != 1 && -s "$BMAD_INSTALL_LOG" ]]; then
+    echo -e "  ${DIM}── last installer output ($BMAD_INSTALL_LOG) ──${NC}"
+    tail -n 15 "$BMAD_INSTALL_LOG" | sed 's/^/    /'
+  fi
+}
+
 if [[ ! -d "_bmad" ]]; then
-  info "Installing BMad Method..."
+  info "Installing BMad Method... ${DIM}(takes a minute — output hidden, set BMAD_SETUP_VERBOSE=1 to show)${NC}"
   # Non-interactive install (BMad v6): --yes skips prompts where possible,
   # --directory pins the target (the installer otherwise prompts for it on a TTY
   # and stalls on non-TTY stdin), --modules picks the module set (core auto-added),
@@ -293,12 +356,13 @@ if [[ ! -d "_bmad" ]]; then
   # Override the module/tool selection via BMAD_INSTALL_MODULES / BMAD_INSTALL_TOOLS.
   BMAD_INSTALL_MODULES="${BMAD_INSTALL_MODULES:-bmm}"
   BMAD_INSTALL_TOOLS="${BMAD_INSTALL_TOOLS:-$AGENT_TOOL}"
-  if npx bmad-method install --yes --directory . \
+  if run_bmad_installer --yes --directory . \
        --modules "$BMAD_INSTALL_MODULES" --tools "$BMAD_INSTALL_TOOLS" \
-       "${BMAD_CONFIG_FLAGS[@]}" </dev/null; then
+       "${BMAD_CONFIG_FLAGS[@]}"; then
     ok "BMad installed: output_folder=$USER_OUTPUT_FOLDER, project_knowledge=$USER_DOCS_FOLDER, user_skill_level=$USER_SKILL_LEVEL"
   else
     warn "BMad auto-install failed — creating minimal skeleton"
+    print_install_log_tail
     mkdir -p _bmad/bmm/agents _bmad/core/tasks _bmad/custom
   fi
 elif [[ "$(bmm_config_value output_folder)" == "$USER_OUTPUT_FOLDER" &&
@@ -306,14 +370,15 @@ elif [[ "$(bmm_config_value output_folder)" == "$USER_OUTPUT_FOLDER" &&
         "$(bmm_config_value user_skill_level)" == "$USER_SKILL_LEVEL" ]]; then
   ok "BMad core already installed with matching config"
 else
-  info "Repointing existing BMad install at the chosen folders..."
+  info "Repointing existing BMad install at the chosen folders... ${DIM}(output hidden, set BMAD_SETUP_VERBOSE=1 to show)${NC}"
   # --action update re-runs the installer over the existing install, which
   # regenerates config.yaml AND the skill files that embed the resolved paths.
-  if npx bmad-method install --yes --directory . --action update \
-       "${BMAD_CONFIG_FLAGS[@]}" </dev/null; then
+  if run_bmad_installer --yes --directory . --action update \
+       "${BMAD_CONFIG_FLAGS[@]}"; then
     ok "BMad config updated: output_folder=$USER_OUTPUT_FOLDER, project_knowledge=$USER_DOCS_FOLDER, user_skill_level=$USER_SKILL_LEVEL"
   else
     warn "BMad update failed — re-run setup or fix $YAML_CFG manually"
+    print_install_log_tail
   fi
 fi
 
@@ -492,20 +557,29 @@ fi
 # Step 7: Install GitHub Issues sync (optional)
 # ─────────────────────────────────────────────────────────────────────────────
 
-step 7 "GitHub Issues sync"
+step 7 "Installing GitHub sync files"
 
-if [[ "$ENABLE_ISSUES" == true ]]; then
-  # Copy sync script
-  if [[ -f "$SETUP_DIR/scripts/bmad-issues.py" ]]; then
-    cp "$SETUP_DIR/scripts/bmad-issues.py" scripts/bmad-issues.py
-    ok "scripts/bmad-issues.py"
-  fi
+if [[ "$ENABLE_GH_PROJECTS" == true ]]; then
+  # Copy sync + bootstrap scripts
+  for script in bmad-issues.py bmad-github-bootstrap.sh; do
+    if [[ -f "$SETUP_DIR/scripts/$script" ]]; then
+      cp "$SETUP_DIR/scripts/$script" "scripts/$script"
+      [[ "$script" == *.sh ]] && chmod +x "scripts/$script"
+      ok "scripts/$script"
+    fi
+  done
 
-  # Copy workflow
-  if [[ -d "$SETUP_DIR/templates/.github" ]]; then
+  # Copy sync workflow (the bmad-pr-ping.yml template stays in templates/ —
+  # it gets installed into each project's SOURCE repos, not the metarepo)
+  if [[ -f "$SETUP_DIR/templates/.github/workflows/sync-issues.yml" ]]; then
     mkdir -p .github/workflows
     cp "$SETUP_DIR/templates/.github/workflows/sync-issues.yml" .github/workflows/
     ok ".github/workflows/sync-issues.yml"
+  fi
+  if [[ -f "$SETUP_DIR/templates/.github/workflows/bmad-pr-ping.yml" ]]; then
+    mkdir -p templates
+    cp "$SETUP_DIR/templates/.github/workflows/bmad-pr-ping.yml" templates/bmad-pr-ping.yml
+    ok "templates/bmad-pr-ping.yml (install into each source repo)"
   fi
 
   # Copy sync config template into each project
@@ -518,11 +592,6 @@ if [[ "$ENABLE_ISSUES" == true ]]; then
     done
   fi
 
-  echo ""
-  info "To complete issues sync setup:"
-  echo -e "  1. Edit each project's github-sync.yaml with the target repo"
-  echo -e "  2. Create 'epic', 'story', 'bug' labels in each target repo"
-  echo -e "  3. If target repos differ from this one, add a BMAD_ISSUES_TOKEN secret"
 else
   info "Skipped — run setup again or copy templates/ manually to enable later"
 fi
@@ -724,14 +793,139 @@ fi
 
 step 9 "Creating projects"
 
+# printf/cat (not echo -e) so the art's backslashes aren't escape-processed.
+printf '%b' "$AMBER"
+cat <<'ART'
++   '             +           '                               .   .      |
+                            o           *       .   +       .          --o--
+ ' .             .    .        '  *          |            .              |   *
+          .              _|_         .   .  -+-
+.       '                 |            '     |          .   * .
+                       .      '   .       .        *                  o  .   .
+   '         +                      * '        .     .    .       + .
+ .                     '                +        '                     +
+     . +     \                      +                      '      .
+              \       +   .     '     ' +     .  .      .      +             +
+        '      *    +   *         +                 '     '  .       '  .      .
+   .      . '                           o  .
+     '             o          +  .                .      .   _..             +
+.          .  .                    +       +         .     '`-. `.    +
+    ' '           |       '             .     .                \  \      . *
+ .              - o -          ':.                  '     '    |  |
+            .     |     . .      '::._   +    . '              /  /   o
+  +                                '._)             * '    _.-`_.`        .
+     *      *  . .     .   .                            .   '''       *     '
+'         '                   .  o       ' . .    '                 +
+ART
+printf '%b' "$NC"
+
 if [[ ${#PROJECTS[@]} -eq 0 ]]; then
   info "No projects to create. Run: bash scripts/bmad-router.sh init <name>"
 else
+  # Scaffold without switching (and without the router's per-file chatter);
+  # switch once at the end — only the last switch matters. Router errors still
+  # surface on stderr.
   for project in "${PROJECTS[@]}"; do
-    bash scripts/bmad-router.sh init "$project"
+    info "Creating project: ${BOLD}$project${NC}"
+    bash scripts/bmad-router.sh init "$project" --no-switch >/dev/null
+    ok "Initialized $project"
   done
+  LAST_PROJECT="${PROJECTS[$((${#PROJECTS[@]}-1))]}"
+  bash scripts/bmad-router.sh switch "$LAST_PROJECT" >/dev/null
+  ok "Active project: ${BOLD}$LAST_PROJECT${NC}"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 10: GitHub project boards (walkthrough)
+# ─────────────────────────────────────────────────────────────────────────────
+
+step 10 "GitHub project boards"
+
+# The bootstrap script owns the detailed instructions (view checklist, token,
+# pr-ping install) — setup just points at it.
+print_github_sync_next_steps() {
   echo ""
-  ok "Created ${#PROJECTS[@]} project(s), active: ${BOLD}${PROJECTS[$((${#PROJECTS[@]}-1))]}${NC}"
+  info "To finish GitHub sync setup later:"
+  echo -e "  1. Push this metarepo to GitHub — issues are created here by default"
+  echo -e "     ${DIM}(or point a project at its source repo via repo: in github-sync.yaml)${NC}"
+  echo -e "  2. Run: ${CYAN}bash scripts/bmad-github-bootstrap.sh --all${NC}"
+  echo -e "     ${DIM}Creates the private board(s) and prints the remaining manual steps.${NC}"
+}
+
+# Every project in the metarepo is a candidate, not just ones created this
+# run — re-running setup offers board creation for existing projects too.
+CANDIDATE_PROJECTS=()
+for sync_cfg in projects/*/github-sync.yaml; do
+  [[ -f "$sync_cfg" ]] && CANDIDATE_PROJECTS+=("$(basename "$(dirname "$sync_cfg")")")
+done
+
+if [[ "$ENABLE_GH_PROJECTS" != true ]]; then
+  info "GitHub sync not enabled — skipping"
+elif [[ "$NONINTERACTIVE" == 1 ]]; then
+  info "Non-interactive mode — boards are not created automatically"
+  print_github_sync_next_steps
+elif [[ ${#CANDIDATE_PROJECTS[@]} -eq 0 ]]; then
+  info "No projects yet — create one with bmad-router init, then bootstrap its board"
+  print_github_sync_next_steps
+elif ! command -v gh &>/dev/null || ! gh auth status &>/dev/null; then
+  warn "gh CLI missing or not authenticated — boards can't be created from here"
+  print_github_sync_next_steps
+else
+  # Issues live in this metarepo unless a project's github-sync.yaml sets
+  # repo: to its own source repo.
+  METAREPO_SLUG="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)"
+
+  echo -e "  Each project gets a ${BOLD}private${NC} GitHub Project board, tracking issues that"
+  echo -e "  mirror the project's BMad epics and stories. Issues are created in this"
+  echo -e "  metarepo. ${DIM}(Override per project via repo: in projects/<name>/github-sync.yaml)${NC}"
+  echo ""
+
+  # Collect the projects that still need a board, then ask ONCE for the batch.
+  PENDING_PROJECTS=()
+  for project in "${CANDIDATE_PROJECTS[@]}"; do
+    SYNC_CFG="projects/$project/github-sync.yaml"
+
+    if grep -qE '^project:[[:space:]]*[0-9]+' "$SYNC_CFG"; then
+      ok "$project: board already configured — skipping"
+      continue
+    fi
+
+    PROJECT_REPO="$(sed -n 's/^repo:[[:space:]]*//p' "$SYNC_CFG" | head -n1 | tr -d '"' | tr -d "'")"
+    if [[ -z "$PROJECT_REPO" || "$PROJECT_REPO" == OWNER/* ]]; then
+      PROJECT_REPO="$METAREPO_SLUG"
+    fi
+    if [[ -z "$PROJECT_REPO" ]]; then
+      info "Skipped $project — push this metarepo to GitHub first (issues live there), then run: bash scripts/bmad-github-bootstrap.sh $project"
+      continue
+    fi
+
+    echo -e "    - ${BOLD}$project${NC} ${DIM}(issues → $PROJECT_REPO)${NC}"
+    PENDING_PROJECTS+=("$project")
+  done
+
+  if [[ ${#PENDING_PROJECTS[@]} -eq 0 ]]; then
+    info "No boards left to create"
+  else
+    echo ""
+    read -rp "  Create private board(s) for ${#PENDING_PROJECTS[@]} project(s) now? [Y/n]: " CREATE_BOARDS
+    CREATE_BOARDS_LC="$(printf '%s' "$CREATE_BOARDS" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$CREATE_BOARDS_LC" == "n" || "$CREATE_BOARDS_LC" == "no" ]]; then
+      info "Skipped — run: bash scripts/bmad-github-bootstrap.sh --all"
+      print_github_sync_next_steps
+    else
+      BOOTSTRAPPED_ANY=false
+      for project in "${PENDING_PROJECTS[@]}"; do
+        if bash scripts/bmad-github-bootstrap.sh "$project"; then
+          BOOTSTRAPPED_ANY=true
+        else
+          warn "Bootstrap failed for $project — fix the issue and re-run: bash scripts/bmad-github-bootstrap.sh $project"
+        fi
+      done
+      if [[ "$BOOTSTRAPPED_ANY" != true ]]; then
+        print_github_sync_next_steps
+      fi
+    fi
+  fi
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -739,9 +933,41 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo ""
-echo -e "${BOLD}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}║  Setup complete                                             ║${NC}"
-echo -e "${BOLD}╚══════════════════════════════════════════════════════════════╝${NC}"
+# printf/cat (not echo -e) so the art's backslashes aren't escape-processed.
+printf '%b' "$SPRING_GREEN"
+cat <<'ART'
+ /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\
+( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )
+ > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <
+ /\_/\                                                                                             /\_/\
+( o.o )        $$$$$$\             $$\                                                            ( o.o )
+ > ^ <        $$  __$$\            $$ |                                                            > ^ <
+ /\_/\        $$ /  \__| $$$$$$\ $$$$$$\   $$\   $$\  $$$$$$\                                      /\_/\
+( o.o )       \$$$$$$\  $$  __$$\\_$$  _|  $$ |  $$ |$$  __$$\                                    ( o.o )
+ > ^ <         \____$$\ $$$$$$$$ | $$ |    $$ |  $$ |$$ /  $$ |                                    > ^ <
+ /\_/\        $$\   $$ |$$   ____| $$ |$$\ $$ |  $$ |$$ |  $$ |                                    /\_/\
+( o.o )       \$$$$$$  |\$$$$$$$\  \$$$$  |\$$$$$$  |$$$$$$$  |                                   ( o.o )
+ > ^ <         \______/  \_______|  \____/  \______/ $$  ____/                                     > ^ <
+ /\_/\                                               $$ |                                          /\_/\
+( o.o )                                              $$ |                                         ( o.o )
+ > ^ <                                               \__|                                          > ^ <
+ /\_/\         $$$$$$\                                    $$\            $$\                       /\_/\
+( o.o )       $$  __$$\                                   $$ |           $$ |                     ( o.o )
+ > ^ <        $$ /  \__| $$$$$$\  $$$$$$\$$$$\   $$$$$$\  $$ | $$$$$$\ $$$$$$\    $$$$$$\          > ^ <
+ /\_/\        $$ |      $$  __$$\ $$  _$$  _$$\ $$  __$$\ $$ |$$  __$$\\_$$  _|  $$  __$$\         /\_/\
+( o.o )       $$ |      $$ /  $$ |$$ / $$ / $$ |$$ /  $$ |$$ |$$$$$$$$ | $$ |    $$$$$$$$ |       ( o.o )
+ > ^ <        $$ |  $$\ $$ |  $$ |$$ | $$ | $$ |$$ |  $$ |$$ |$$   ____| $$ |$$\ $$   ____|        > ^ <
+ /\_/\        \$$$$$$  |\$$$$$$  |$$ | $$ | $$ |$$$$$$$  |$$ |\$$$$$$$\  \$$$$  |\$$$$$$$\         /\_/\
+( o.o )        \______/  \______/ \__| \__| \__|$$  ____/ \__| \_______|  \____/  \_______|       ( o.o )
+ > ^ <                                          $$ |                                               > ^ <
+ /\_/\                                          $$ |                                               /\_/\
+( o.o )                                         \__|                                              ( o.o )
+ > ^ <                                                                                             > ^ <
+ /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\
+( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )
+ > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <
+ART
+printf '%b' "$NC"
 echo ""
 echo -e "  ${DIM}Output folder: $USER_OUTPUT_FOLDER${NC}"
 echo -e "  ${DIM}Docs folder:   $USER_DOCS_FOLDER${NC}"

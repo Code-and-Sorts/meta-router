@@ -6,7 +6,7 @@ runs `setup.sh` (a real BMad install), then copies each `examples/seed/<project>
 tree over the matching scaffolded `projects/<project>/` so the published example
 has realistic artifacts.
 
-- **alpha** — a full-stack, multi-repo project (`web` + `api`). Its `STORY-001`
+- **alpha** — a full-stack, multi-repo project (`web` + `api`). Its `1-1-create-a-task`
   declares an `## Affected Repos` section listing both repos, showing how one
   story maps to a git worktree per repo.
 - **beta** — a single-repo project, showing the default-sole-repo path where

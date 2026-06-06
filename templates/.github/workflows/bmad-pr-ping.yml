@@ -1,0 +1,41 @@
+name: Ping BMad metarepo about story PRs
+
+# Install this workflow in each project SOURCE repo (not the metarepo).
+#
+# It does exactly one thing: when a PR on a story/<story-key> branch opens,
+# reopens, or closes, it triggers the metarepo's sync workflow via
+# repository_dispatch. The sync there derives all issue/board state itself —
+# this workflow never writes issues or Project fields, so it stays safe on
+# every event and needs only minimal permissions.
+#
+# Setup in this repo:
+#   - Repo (or org) variable BMAD_METAREPO: the metarepo slug, e.g. my-org/bmad-meta
+#   - Secret BMAD_METAREPO_TOKEN: fine-grained PAT with Contents read/write
+#     (for repository_dispatch) on the metarepo only
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, closed]
+
+jobs:
+  ping:
+    if: startsWith(github.head_ref, 'story/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch bmad-pr event to metarepo
+        env:
+          GH_TOKEN: ${{ secrets.BMAD_METAREPO_TOKEN }}
+          METAREPO: ${{ vars.BMAD_METAREPO }}
+          STORY_BRANCH: ${{ github.head_ref }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_ACTION: ${{ github.event.action }}
+        run: |
+          if [ -z "$METAREPO" ]; then
+            echo "::error::BMAD_METAREPO variable is not set (expected owner/repo of the metarepo)"
+            exit 1
+          fi
+          gh api "repos/$METAREPO/dispatches" \
+            -f event_type=bmad-pr \
+            -f "client_payload[story_branch]=$STORY_BRANCH" \
+            -f "client_payload[pr_url]=$PR_URL" \
+            -f "client_payload[action]=$PR_ACTION"

@@ -1,25 +1,43 @@
-name: Sync sprint stories to GitHub Issues
+name: Sync BMad artifacts to GitHub Issues + Projects
 
-# Fires when sprint-status.yaml changes on any branch.
-# Stories are synced during the planning branch — issue numbers get
-# committed back into sprint-status.yaml before the PR merges.
+# Single writer for issue state and board Status. Fires when BMad artifacts
+# change, when a source repo pings us about a story PR (bmad-pr-ping.yml),
+# and nightly as a reconcile sweep.
+#
+# Requires the BMAD_PROJECT_TOKEN secret: a fine-grained PAT (or GitHub App
+# token) with Projects read/write on the org plus Issues read/write and
+# Pull requests read on the metarepo and every project source repo. The
+# default GITHUB_TOKEN cannot access Projects v2 — there is no fallback.
 
 on:
   push:
     paths:
-      - 'projects/**/implementation-artifacts/sprint-status.yaml'
+      - 'projects/**/planning-artifacts/**'
+      - 'projects/**/implementation-artifacts/**'
+      - 'projects/**/github-sync.yaml'
 
-  # Manual trigger for catch-up or re-sync
+  # Sent by bmad-pr-ping.yml in source repos when a story/* PR opens/closes
+  repository_dispatch:
+    types: [bmad-pr]
+
+  # Nightly reconcile: catches PR merges, manual issue edits, missed events
+  schedule:
+    - cron: '23 4 * * *'
+
   workflow_dispatch:
     inputs:
       project:
-        description: 'Project to sync (leave blank for all changed)'
+        description: 'Project to sync (blank = all configured)'
         required: false
         type: string
 
+# Serialize runs so two pushes can't interleave issue creation
+concurrency:
+  group: bmad-sync
+  cancel-in-progress: false
+
 permissions:
-  contents: write    # to commit issue numbers back into sprint-status.yaml
-  issues: write      # to create/update/close issues
+  contents: read
 
 jobs:
   sync:
@@ -29,10 +47,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Fetch full history so we can commit back
           fetch-depth: 0
-          # Use a token that can push back to the branch
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -42,47 +57,53 @@ jobs:
       - name: Install dependencies
         run: pip install pyyaml
 
+      - name: Check token
+        env:
+          GH_TOKEN: ${{ secrets.BMAD_PROJECT_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::BMAD_PROJECT_TOKEN secret is not set. Create a fine-grained PAT with org Projects read/write + Issues read/write and add it as a repo or org secret."
+            exit 1
+          fi
+
       - name: Detect changed projects
         id: detect
         env:
           INPUT_PROJECT: ${{ inputs.project }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
         run: |
           if [ -n "$INPUT_PROJECT" ]; then
             echo "projects=$INPUT_PROJECT" >> "$GITHUB_OUTPUT"
-          else
-            # Find which projects had sprint-status.yaml changes
-            CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'projects/**/implementation-artifacts/sprint-status.yaml' \
-              | sed 's|^projects/||' | cut -d/ -f1 | sort -u | tr '\n' ' ')
-            echo "projects=$CHANGED" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-      - name: Sync issues
+          if [ "$EVENT_NAME" = "push" ] && [ -n "$PUSH_BEFORE" ] && \
+             ! echo "$PUSH_BEFORE" | grep -q '^0*$' && \
+             git cat-file -e "$PUSH_BEFORE" 2>/dev/null; then
+            CHANGED=$(git diff --name-only "$PUSH_BEFORE" "$PUSH_AFTER" -- 'projects/' \
+              | cut -d/ -f2 | sort -u | tr '\n' ' ')
+            echo "projects=$CHANGED" >> "$GITHUB_OUTPUT"
+          else
+            # dispatch / schedule / first push on a branch → sync everything
+            echo "projects=--all" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sync
         if: steps.detect.outputs.projects != ''
         env:
-          GH_TOKEN: ${{ secrets.BMAD_ISSUES_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.BMAD_PROJECT_TOKEN }}
           PROJECTS: ${{ steps.detect.outputs.projects }}
         run: |
-          for project in $PROJECTS; do
-            echo "── Syncing: $project ──"
-
-            # Skip if no sync config
-            if [ ! -f "projects/$project/github-sync.yaml" ]; then
-              echo "  Skipping $project (no github-sync.yaml)"
-              continue
-            fi
-
-            python scripts/bmad-issues.py sync --project "$project"
-          done
-
-      - name: Commit issue number backlinks
-        run: |
-          git config user.name "bmad-issues[bot]"
-          git config user.email "bmad-issues[bot]@users.noreply.github.com"
-
-          if git diff --quiet -- 'projects/**/sprint-status.yaml'; then
-            echo "No changes to commit"
+          if [ "$PROJECTS" = "--all" ]; then
+            python scripts/bmad-issues.py sync --all
           else
-            git add 'projects/**/sprint-status.yaml'
-            git commit -m "chore: sync issue numbers in sprint-status.yaml [skip ci]"
-            git push
+            for project in $PROJECTS; do
+              if [ -f "projects/$project/github-sync.yaml" ]; then
+                python scripts/bmad-issues.py sync --project "$project"
+              else
+                echo "Skipping $project (no github-sync.yaml)"
+              fi
+            done
           fi

@@ -19,7 +19,7 @@
 activation_steps_prepend = [
   "Read the story's '## Affected Repos' section to get the list of source repos this story touches (names match entries in repos.yaml). If the section is absent or empty, fall back to every repo in repos.yaml only when there is exactly one repo; otherwise ask the user which repos the story touches.",
   "Ensure each affected repo is cloned: run `bash scripts/bmad-router.sh clone <repo>` for any not yet present under repos/.",
-  "Create the per-story worktrees: run `bash scripts/bmad-router.sh worktree <story-id> <repo> [<repo> ...]` with every affected repo (or `--all`). This creates implementation/<story-id>/<repo>/ checked out on branch story/<story-id> for each repo.",
+  "Create the per-story worktrees: run `bash scripts/bmad-router.sh worktree <story-id> <repo> [<repo> ...]` with every affected repo (or `--all`). <story-id> is ALWAYS the story's development_status key from sprint-status.yaml (e.g. 1-2-account-management) — the GitHub sync keys PR detection off the story/<story-id> branch name. This creates implementation/<story-id>/<repo>/ checked out on branch story/<story-id> for each repo.",
   "Implement ALL code changes for this story inside those worktrees (implementation/<story-id>/<repo>/), never directly in repos/<repo>/. Commit on the story/<story-id> branch in each affected repo.",
 ]
 

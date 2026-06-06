@@ -5,8 +5,9 @@ name: Generate example branch
 #                     run the metarepo's own CI, and force-push it to `example`.
 #   2. sync-issues  — after the branch is updated, run the issue sync (the same
 #                     bmad-issues.py the sync-issues Action uses) against the
-#                     example project, creating/updating real issues in this repo
-#                     and committing the issue-number backlinks onto `example`.
+#                     example project, creating/updating real issues in this repo.
+#                     Nothing is committed back — the sync rebuilds its key→issue
+#                     mapping from issue-body markers at runtime.
 #
 # Runs on every push to main, and on manual dispatch (Actions tab → Run workflow)
 # so you can refresh the example + its issues on demand and review the project.
@@ -52,7 +53,7 @@ jobs:
           BMAD_OUTPUT_FOLDER: features
           BMAD_DOCS_FOLDER: docs
           BMAD_SETUP_PROJECTS: 'alpha,beta'
-          BMAD_SETUP_ISSUES_SYNC: 'y'
+          BMAD_SETUP_GITHUB_SYNC: 'y'
         run: |
           set -euxo pipefail
           GEN="$RUNNER_TEMP/example-metarepo"
@@ -127,13 +128,14 @@ jobs:
     name: Sync example stories to GitHub Issues
     needs: generate
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - name: Checkout the freshly published example branch
         uses: actions/checkout@v4
         with:
           ref: example
-          # token must be able to push the issue-number backlinks back to example
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -148,20 +150,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euxo pipefail
-          # alpha's github-sync.yaml targets this repo, so its ready stories become
-          # real issues here. Idempotent (HTML markers); writes issue numbers back
-          # into sprint-status.yaml.
+          # alpha's github-sync.yaml targets this repo, so its stories become
+          # real issues here. Idempotent (HTML markers), and the sync rebuilds
+          # the key→issue mapping from those markers at runtime — nothing is
+          # written back to the branch. No Project board is configured for the
+          # demo, so the default GITHUB_TOKEN (issues: write) is sufficient.
           python scripts/bmad-issues.py sync --project alpha
-
-      - name: Commit issue-number backlinks onto example
-        run: |
-          set -euxo pipefail
-          if git diff --quiet; then
-            echo "No backlink changes to commit"
-          else
-            git config user.name "bmad-issues[bot]"
-            git config user.email "bmad-issues[bot]@users.noreply.github.com"
-            git add -A
-            git commit -qm "chore: sync issue numbers into sprint-status.yaml [skip ci]"
-            git push origin HEAD:example
-          fi

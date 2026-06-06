@@ -30,6 +30,10 @@ from repo-root-relative paths and never need the `projects/<name>/` path:
 - `repos/<name>/` is a full clone, created by `clone`. Never edit code here.
 - `implementation/<story-id>/<name>/` is an isolated worktree off the matching
   clone, checked out on branch `story/<story-id>`. Implement story code here.
+- `<story-id>` is ALWAYS the story's `development_status` key from
+  sprint-status.yaml (e.g. `1-2-account-management`) — the same key names the
+  story file. The GitHub sync derives "In Review" status from open PRs on
+  `story/<story-id>` branches, so this exact format is load-bearing.
 
 ## Why worktrees per repo
 

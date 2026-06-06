@@ -1,361 +1,281 @@
 """
-Tests for bmad-issues.py — sprint-to-issue sync logic.
+Tests for bmad-issues.py — BMad v6 artifact parsing and sync derivation.
 
-Tests the parsing, collection, and writeback logic. Does NOT test
-actual GitHub API calls (those need gh CLI auth).
+Covers the pure logic: development_status classification, epics.md joins,
+status mapping, planning checklist, orphan detection, and marker parsing.
+Does NOT test GitHub API calls (those need gh CLI auth).
 """
 
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import patch
-import yaml
 
-# Import the sync module
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import importlib
 bmad_issues = importlib.import_module("bmad-issues")
 
 
-# ── collect_stories ──────────────────────────────────────────────────────────
+SPRINT_MAP = {
+    "epic-1": "in-progress",
+    "1-1-user-authentication": "done",
+    "1-2-account-management": "ready-for-dev",
+    "epic-1-retrospective": "optional",
+    "epic-2": "backlog",
+    "2-1-personality-system": "drafted",
+    "2-2-chat-interface": "backlog",
+    "epic-2-retrospective": "optional",
+}
+
+EPICS_MD = """\
+# Plant App - Epic Breakdown
+
+## Epic List
+
+## Epic 1: User Accounts
+Users can register and manage accounts.
+
+### Story 1.1: User Authentication
+As a user, I want to log in, so that my data is private.
+
+**Acceptance Criteria:**
+**Given** a registered user **When** they log in **Then** they see their data.
+
+### Story 1.2: Account Management
+As a user, I want to edit my profile.
+
+## Epic 2: Personality
+Chat personality for plants.
+
+### Story 2.1: Personality System
+As a plant owner, I want my plant to have a personality.
+"""
 
 
-class TestCollectStories:
-    def test_nested_epics_and_stories(self):
-        data = {
-            "current_sprint": 1,
-            "epics": [
-                {
-                    "id": "epic-1",
-                    "title": "Pantry CRUD",
-                    "status": "in-progress",
-                    "stories": [
-                        {"id": "STORY-001", "title": "Create API", "status": "ready"},
-                        {"id": "STORY-002", "title": "Delete API", "status": "draft"},
-                    ],
-                }
-            ],
+class TestClassifyDevelopmentStatus:
+    def test_splits_epics_stories_and_skips_retrospectives(self):
+        epics, stories = bmad_issues.classify_development_status(SPRINT_MAP)
+        assert sorted(epics) == [1, 2]
+        assert epics[1] == {"key": "epic-1", "status": "in-progress"}
+        keys = [s["key"] for s in stories]
+        assert "epic-1-retrospective" not in keys
+        assert len(stories) == 4
+
+    def test_story_epic_join_numbers(self):
+        _, stories = bmad_issues.classify_development_status(SPRINT_MAP)
+        by_key = {s["key"]: s for s in stories}
+        assert by_key["1-2-account-management"]["epic"] == 1
+        assert by_key["1-2-account-management"]["story"] == 2
+        assert by_key["2-1-personality-system"]["epic"] == 2
+
+    def test_nonconforming_key_treated_as_epicless_story(self):
+        epics, stories = bmad_issues.classify_development_status(
+            {"hotfix-login": "in-progress"}
+        )
+        assert epics == {}
+        assert stories[0]["epic"] is None
+
+    def test_empty_input(self):
+        assert bmad_issues.classify_development_status({}) == ({}, [])
+        assert bmad_issues.classify_development_status(None) == ({}, [])
+
+
+class TestParseEpicsDoc:
+    def test_titles_and_goals(self):
+        epics, _ = bmad_issues.parse_epics_doc(EPICS_MD)
+        assert epics[1]["title"] == "User Accounts"
+        assert "register and manage accounts" in epics[1]["goal"]
+        assert "Story 1.1" not in epics[1]["goal"]
+
+    def test_story_titles_and_bodies(self):
+        _, stories = bmad_issues.parse_epics_doc(EPICS_MD)
+        assert stories[(1, 1)]["title"] == "User Authentication"
+        assert "Acceptance Criteria" in stories[(1, 1)]["body"]
+        assert "Account Management" not in stories[(1, 1)]["body"]
+        assert "Epic 2" not in stories[(1, 2)]["body"]
+
+    def test_empty_doc(self):
+        assert bmad_issues.parse_epics_doc(None) == ({}, {})
+        assert bmad_issues.parse_epics_doc("") == ({}, {})
+
+
+class TestStatusMapping:
+    def test_sprint_statuses_map_to_board_columns(self):
+        cases = {
+            "backlog": "Backlog",
+            "ready-for-dev": "Ready",
+            "drafted": "Ready",
+            "in-progress": "In Progress",
+            "contexted": "In Progress",
+            "review": "In Review",
+            "done": "Done",
         }
-        stories = bmad_issues.collect_stories(data)
-        assert len(stories) == 3  # 1 epic + 2 stories
-        assert stories[0]["type"] == "epic"
-        assert stories[0]["id"] == "epic-1"
-        assert stories[1]["id"] == "STORY-001"
-        assert stories[1]["epic_id"] == "epic-1"
-        assert stories[2]["status"] == "draft"
+        for sprint, expected in cases.items():
+            assert bmad_issues.effective_story_status(sprint, "1-1-x", {}) == expected
 
-    def test_flat_stories(self):
-        data = {
-            "current_sprint": 2,
-            "stories": [
-                {"id": "BUG-001", "title": "Fix crash", "status": "ready", "type": "bug"},
-            ],
+    def test_open_pr_forces_in_review(self):
+        open_keys = {"1-2-account-management"}
+        assert (
+            bmad_issues.effective_story_status(
+                "in-progress", "1-2-account-management", open_keys
+            )
+            == "In Review"
+        )
+
+    def test_done_wins_over_open_pr(self):
+        assert bmad_issues.effective_story_status("done", "1-1-x", {"1-1-x"}) == "Done"
+
+    def test_unknown_status_falls_back_to_backlog(self):
+        assert bmad_issues.effective_story_status("weird", "1-1-x", set()) == "Backlog"
+
+
+class TestPrLinking:
+    PRS = [
+        {"url": "https://github.com/o/web/pull/12", "repo": "o/web", "number": 12, "state": "open"},
+        {"url": "https://github.com/o/api/pull/7", "repo": "o/api", "number": 7, "state": "merged"},
+    ]
+
+    def test_pr_section_lists_all_prs_sorted_by_repo(self):
+        section = bmad_issues.build_pr_section(self.PRS)
+        assert "## Pull Requests" in section
+        assert section.index("o/api#7") < section.index("o/web#12")
+        assert "(https://github.com/o/web/pull/12)" in section
+        assert "merged" in section and "open" in section
+
+    def test_empty_prs_add_no_section(self):
+        assert bmad_issues.build_pr_section([]) == ""
+
+    def test_open_pr_key_derivation(self):
+        prs_by_key = {
+            "1-1-a": [{"state": "merged"}, {"state": "open"}],
+            "1-2-b": [{"state": "merged"}],
+            "1-3-c": [{"state": "closed"}],
         }
-        stories = bmad_issues.collect_stories(data)
-        assert len(stories) == 1
-        assert stories[0]["type"] == "bug"
-        assert stories[0]["sprint"] == 2
-
-    def test_empty_data(self):
-        assert bmad_issues.collect_stories({}) == []
-        assert bmad_issues.collect_stories(None) == []
-
-    def test_mixed_epics_and_flat(self):
-        data = {
-            "current_sprint": 1,
-            "epics": [
-                {
-                    "id": "epic-1",
-                    "title": "E1",
-                    "status": "active",
-                    "stories": [
-                        {"id": "S-1", "title": "Story 1", "status": "ready"},
-                    ],
-                }
-            ],
-            "stories": [
-                {"id": "S-2", "title": "Standalone", "status": "todo"},
-            ],
-        }
-        stories = bmad_issues.collect_stories(data)
-        assert len(stories) == 3  # epic + nested story + flat story
-
-    def test_sprint_propagated(self):
-        data = {"current_sprint": 5, "epics": [{"id": "e", "title": "E", "status": "x", "stories": []}]}
-        stories = bmad_issues.collect_stories(data)
-        assert stories[0]["sprint"] == 5
-
-    def test_github_issue_preserved(self):
-        data = {
-            "epics": [
-                {
-                    "id": "epic-1",
-                    "title": "E",
-                    "status": "active",
-                    "github_issue": 42,
-                    "stories": [
-                        {"id": "S-1", "title": "S", "status": "ready", "github_issue": 43},
-                    ],
-                }
-            ]
-        }
-        stories = bmad_issues.collect_stories(data)
-        assert stories[0]["github_issue"] == 42
-        assert stories[1]["github_issue"] == 43
+        assert bmad_issues.keys_with_open_prs(prs_by_key) == {"1-1-a"}
 
 
-# ── Markers ──────────────────────────────────────────────────────────────────
+class TestPlanning:
+    def test_checklist_body(self):
+        docs = [("PRD", True, True), ("UX Spec", False, False)]
+        body = bmad_issues.build_planning_body("alpha", docs)
+        assert "- [x] PRD" in body
+        assert "- [ ] UX Spec _(optional)_" in body
+
+    def test_status_progression(self):
+        none = [("PRD", False, True), ("Architecture", False, True)]
+        some = [("PRD", True, True), ("Architecture", False, True)]
+        done = [("PRD", True, True), ("Architecture", True, True)]
+        assert bmad_issues.planning_status(none, False) == ("Backlog", False)
+        assert bmad_issues.planning_status(some, False) == ("In Progress", False)
+        assert bmad_issues.planning_status(some, True) == ("In Review", False)
+        assert bmad_issues.planning_status(done, False) == ("Done", True)
+
+    def test_detect_planning_docs(self, tmp_path):
+        (tmp_path / "prds" / "prd-app-2026").mkdir(parents=True)
+        (tmp_path / "prds" / "prd-app-2026" / "prd.md").write_text("# PRD")
+        (tmp_path / "epics.md").write_text("# Epics")
+        docs = {name: exists for name, exists, _ in bmad_issues.detect_planning_docs(tmp_path)}
+        assert docs["PRD"] is True
+        assert docs["Epic & Story breakdown"] is True
+        assert docs["Architecture"] is False
+
+    def test_detect_handles_missing_dir(self, tmp_path):
+        docs = bmad_issues.detect_planning_docs(tmp_path / "nope")
+        assert all(exists is False for _, exists, _ in docs)
+
+
+class TestFeatures:
+    def make_prd(self, planning_dir, folder, title, status):
+        run_dir = planning_dir / "prds" / folder
+        run_dir.mkdir(parents=True)
+        (run_dir / "prd.md").write_text(
+            f"---\ntitle: {title}\nstatus: {status}\n---\n# {title}\n"
+        )
+
+    def test_one_feature_per_prd_with_newest_current(self, tmp_path):
+        planning = tmp_path / "features" / "planning-artifacts"
+        self.make_prd(planning, "prd-app-2026-01-10", "Inventory v1", "final")
+        self.make_prd(planning, "prd-app-2026-05-02", "Inventory v2", "draft")
+        prds = bmad_issues.find_prds(planning)
+        assert len(prds) == 2
+        assert prds[0]["title"] == "Inventory v1"
+        assert prds[0]["current"] is False
+        assert prds[1]["title"] == "Inventory v2"
+        assert prds[1]["current"] is True
+        assert prds[1]["key"] == "feature-prd-app-2026-05-02"
+        assert prds[1]["status"] == "draft"
+
+    def test_bare_prd_file_fallback(self, tmp_path):
+        planning = tmp_path / "features" / "planning-artifacts"
+        planning.mkdir(parents=True)
+        (planning / "PRD.md").write_text("# Untitled PRD\n")
+        prds = bmad_issues.find_prds(planning)
+        assert len(prds) == 1
+        assert prds[0]["current"] is True
+        assert prds[0]["key"] == "feature-prd"
+        assert prds[0]["status"] == "draft"
+
+    def test_no_prds(self, tmp_path):
+        assert bmad_issues.find_prds(tmp_path / "missing") == []
+
+    def test_frontmatter_parsing(self):
+        assert bmad_issues.parse_frontmatter("---\ntitle: X\n---\nbody")["title"] == "X"
+        assert bmad_issues.parse_frontmatter("no frontmatter") == {}
+        assert bmad_issues.parse_frontmatter("---\n: bad: [yaml\n---\n") == {}
 
 
 class TestMarkers:
-    def test_build_marker(self):
-        m = bmad_issues.build_marker("food-inventory", "STORY-001")
-        assert m == "<!-- bmad-sync:STORY-001:food-inventory -->"
-
-    def test_marker_regex(self):
-        text = "<!-- bmad-sync:STORY-001:food-inventory -->"
-        match = bmad_issues.MARKER_RE.search(text)
-        assert match
-        assert match.group(1) == "STORY-001"
-        assert match.group(2) == "food-inventory"
-
-    def test_marker_in_body(self):
-        body = "<!-- bmad-sync:BUG-005:my-app -->\n\n# Bug report\nSomething broke."
-        match = bmad_issues.MARKER_RE.search(body)
-        assert match.group(1) == "BUG-005"
+    def test_marker_roundtrip(self):
+        marker = bmad_issues.build_marker("1-2-account-management", "alpha")
+        match = bmad_issues.MARKER_RE.search(f"prefix\n{marker}\nbody")
+        assert match.group(1) == "1-2-account-management"
+        assert match.group(2) == "alpha"
 
 
-# ── Status classification ────────────────────────────────────────────────────
+class TestHelpers:
+    def test_humanize_key(self):
+        assert bmad_issues.humanize_key("1-2-account-management") == "Account Management"
+        assert bmad_issues.humanize_key("hotfix") == "Hotfix"
 
-
-class TestStatusClassification:
-    def test_open_statuses(self):
-        for s in ["ready", "todo", "in-progress", "in_progress", "active", "planned"]:
-            assert s in bmad_issues.OPEN_STATUSES
-
-    def test_close_statuses(self):
-        for s in ["done", "complete", "completed", "shipped", "cancelled"]:
-            assert s in bmad_issues.CLOSE_STATUSES
-
-    def test_skip_statuses(self):
-        for s in ["draft", "backlog", "deferred"]:
-            assert s in bmad_issues.SKIP_STATUSES
-
-    def test_no_overlap(self):
-        assert not bmad_issues.OPEN_STATUSES & bmad_issues.CLOSE_STATUSES
-        assert not bmad_issues.OPEN_STATUSES & bmad_issues.SKIP_STATUSES
-        assert not bmad_issues.CLOSE_STATUSES & bmad_issues.SKIP_STATUSES
-
-
-# ── write_back_issues ────────────────────────────────────────────────────────
-
-
-class TestWriteBack:
-    def test_writes_issue_numbers(self, tmp_path):
-        data = {
-            "epics": [
-                {
-                    "id": "epic-1",
-                    "title": "E",
-                    "status": "active",
-                    "stories": [
-                        {"id": "S-1", "title": "S1", "status": "ready"},
-                        {"id": "S-2", "title": "S2", "status": "ready"},
-                    ],
-                }
-            ]
+    def test_repo_slug_from_url(self):
+        cases = {
+            "git@github.com:org/repo.git": "org/repo",
+            "https://github.com/org/repo": "org/repo",
+            "https://github.com/org/repo.git": "org/repo",
+            "not-a-url": None,
         }
-        yaml_path = tmp_path / "sprint-status.yaml"
-        with open(yaml_path, "w") as f:
-            yaml.dump(data, f)
+        for url, expected in cases.items():
+            assert bmad_issues.repo_slug_from_url(url) == expected
 
-        issue_map = {"epic-1": 10, "S-1": 11, "S-2": 12}
-        modified = bmad_issues.write_back_issues(yaml_path, data, issue_map)
-
-        assert modified
-        assert data["epics"][0]["github_issue"] == 10
-        assert data["epics"][0]["stories"][0]["github_issue"] == 11
-        assert data["epics"][0]["stories"][1]["github_issue"] == 12
-
-        # Verify file was written
-        reloaded = yaml.safe_load(yaml_path.read_text())
-        assert reloaded["epics"][0]["github_issue"] == 10
-
-    def test_no_change_when_already_set(self, tmp_path):
-        data = {
-            "epics": [
-                {
-                    "id": "epic-1",
-                    "title": "E",
-                    "status": "active",
-                    "github_issue": 10,
-                    "stories": [],
-                }
-            ]
-        }
-        yaml_path = tmp_path / "sprint-status.yaml"
-        with open(yaml_path, "w") as f:
-            yaml.dump(data, f)
-
-        modified = bmad_issues.write_back_issues(yaml_path, data, {"epic-1": 10})
-        assert not modified
-
-    def test_flat_stories_writeback(self, tmp_path):
-        data = {
-            "stories": [
-                {"id": "S-1", "title": "S", "status": "ready"},
-            ]
-        }
-        yaml_path = tmp_path / "sprint-status.yaml"
-        with open(yaml_path, "w") as f:
-            yaml.dump(data, f)
-
-        modified = bmad_issues.write_back_issues(yaml_path, data, {"S-1": 99})
-        assert modified
-        assert data["stories"][0]["github_issue"] == 99
+    def test_strip_project_root(self):
+        assert bmad_issues.strip_project_root('"{project-root}/features"') == "features"
+        assert bmad_issues.strip_project_root("docs") == "docs"
 
 
-# ── read_story_file ──────────────────────────────────────────────────────────
-
-
-class TestReadStoryFile:
-    def test_reads_markdown(self, tmp_path):
-        story = tmp_path / "STORY-001.md"
-        story.write_text("# Story\n\nDo the thing.")
-        result = bmad_issues.read_story_file(tmp_path, "STORY-001.md")
-        assert "Do the thing" in result
-
-    def test_strips_frontmatter(self, tmp_path):
-        story = tmp_path / "STORY-001.md"
-        story.write_text("---\ntitle: Test\n---\n# Story\n\nContent here.")
-        result = bmad_issues.read_story_file(tmp_path, "STORY-001.md")
-        assert "title: Test" not in result
-        assert "Content here" in result
-
-    def test_missing_file(self, tmp_path):
-        result = bmad_issues.read_story_file(tmp_path, "nonexistent.md")
-        assert result is None
-
-    def test_nested_path(self, tmp_path):
-        nested = tmp_path / "planning-artifacts" / "epics"
-        nested.mkdir(parents=True)
-        story = nested / "STORY-001.md"
-        story.write_text("# Nested story")
-        result = bmad_issues.read_story_file(tmp_path, "planning-artifacts/epics/STORY-001.md")
-        assert "Nested story" in result
-
-
-# ── resolve_output_folder ────────────────────────────────────────────────────
-
-
-class TestResolveOutputFolder:
-    def test_finds_features(self, tmp_path):
-        (tmp_path / "features" / "implementation-artifacts").mkdir(parents=True)
-        (tmp_path / "features" / "implementation-artifacts" / "sprint-status.yaml").write_text("x: 1")
-        assert bmad_issues.resolve_output_folder(tmp_path) == "features"
-
-    def test_finds_bmad_output(self, tmp_path):
-        (tmp_path / "_bmad-output" / "implementation-artifacts").mkdir(parents=True)
-        (tmp_path / "_bmad-output" / "implementation-artifacts" / "sprint-status.yaml").write_text("x: 1")
-        assert bmad_issues.resolve_output_folder(tmp_path) == "_bmad-output"
-
-    def test_returns_none_when_missing(self, tmp_path):
-        assert bmad_issues.resolve_output_folder(tmp_path) is None
-
-
-# ── sync_story milestone-strip regression ────────────────────────────────────
-
-
-class TestSyncStoryMilestoneStrip:
-    """Regression test for M1: milestone stripped by value equality.
-
-    Before the fix, create_args was filtered with:
-        [a for a in create_args if a != "--milestone" and a != milestone]
-
-    If the story title equalled the milestone string, that filter also
-    removed the "--title" value, leaving gh issue create without a title.
-
-    After the fix the --milestone <value> PAIR is removed by index, so
-    any other arg that happens to share the milestone's text is untouched.
-    """
-
-    def _make_story(self, title):
-        return {
-            "id": "STORY-001",
-            "title": title,
-            "status": "ready",
-            "type": "story",
-            "file": None,
-            "sprint": 1,
-            "github_issue": None,
-        }
-
-    def _make_config(self, milestone_prefix="Sprint"):
-        return {
-            "repo": "owner/repo",
-            "labels": {"story": "story"},
-            "milestone_prefix": milestone_prefix,
-        }
-
-    def test_milestone_pair_removed_but_title_survives_when_title_equals_milestone(
-        self, tmp_path
-    ):
-        """The story title equals the milestone string.
-
-        The first gh call (with --milestone) fails with a milestone error.
-        The retry must NOT strip --title's value even though it equals the
-        milestone string.
-        """
-        milestone_value = "Sprint 1"
-        story = self._make_story(milestone_value)  # title == milestone
-        config = self._make_config()
-
-        milestone_error = SimpleNamespace(
-            returncode=1,
-            stdout="",
-            stderr="could not find milestone 'Sprint 1'",
+class TestOrphanDetection:
+    def test_vanished_key_is_not_in_live_set(self):
+        epics, stories = bmad_issues.classify_development_status(
+            {"epic-1": "backlog", "1-1-new-name": "backlog"}
         )
-        success_result = SimpleNamespace(
-            returncode=0,
-            stdout="https://github.com/owner/repo/issues/7\n",
-            stderr="",
-        )
+        live = {bmad_issues.DELIVERY_ROOT_KEY}
+        live.update(e["key"] for e in epics.values())
+        live.update(s["key"] for s in stories)
+        assert "1-1-old-name" not in live
+        assert "1-1-new-name" in live
+        assert "epic-1" in live
 
-        captured_retry_args = []
 
-        def fake_run_gh(*args, check=True):
-            # First call — the one that includes --milestone — should fail.
-            if "--milestone" in args:
-                return milestone_error
-            # Subsequent calls (the retry) succeed; record what was passed.
-            captured_retry_args.extend(args)
-            return success_result
+class TestFindEpicsDoc:
+    def test_prefers_whole_doc(self, tmp_path):
+        (tmp_path / "epics.md").write_text("# Whole")
+        (tmp_path / "epics").mkdir()
+        (tmp_path / "epics" / "index.md").write_text("# Sharded")
+        assert "Whole" in bmad_issues.find_epics_doc(tmp_path)
 
-        with patch.object(bmad_issues, "run_gh", side_effect=fake_run_gh):
-            # find_existing_issue must also be patched so we take the
-            # create-new-issue branch rather than the update branch.
-            with patch.object(bmad_issues, "find_existing_issue", return_value=None):
-                issue_num = bmad_issues.sync_story(
-                    story,
-                    project_name="test-project",
-                    project_dir=tmp_path,
-                    config=config,
-                )
+    def test_sharded_fallback(self, tmp_path):
+        (tmp_path / "epics").mkdir()
+        (tmp_path / "epics" / "index.md").write_text("# Index")
+        (tmp_path / "epics" / "epic-1.md").write_text("## Epic 1: One")
+        text = bmad_issues.find_epics_doc(tmp_path)
+        assert "Index" in text and "Epic 1" in text
 
-        assert issue_num == 7, "Expected issue #7 from the retry call"
-
-        # --milestone and its value must be absent from the retry args.
-        assert "--milestone" not in captured_retry_args
-        assert milestone_value not in captured_retry_args or (
-            "--title" in captured_retry_args
-            and captured_retry_args[captured_retry_args.index("--title") + 1]
-            == milestone_value
-        ), (
-            "The title arg should survive even though it equals the milestone value"
-        )
-
-        # More direct assertion: --title followed by the milestone_value must
-        # still be present in the retry args.
-        assert "--title" in captured_retry_args
-        title_pos = captured_retry_args.index("--title")
-        assert captured_retry_args[title_pos + 1] == milestone_value
+    def test_missing_dir(self, tmp_path):
+        assert bmad_issues.find_epics_doc(tmp_path / "nope") is None

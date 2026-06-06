@@ -71,6 +71,7 @@ step 1 "Configuration"
 #                          positional arg, if given, still takes precedence)
 #   BMAD_OUTPUT_FOLDER     output folder name      (default: features)
 #   BMAD_DOCS_FOLDER       docs folder name        (default: docs)
+#   BMAD_SETUP_SKILL_LEVEL user skill level         (beginner|intermediate|expert; default: expert)
 #   BMAD_SETUP_TOOL        agent tool              (claude-code|github-copilot|codex; default: claude-code)
 #   BMAD_SETUP_PROJECTS    comma-separated projects (default: none)
 #   BMAD_SETUP_ISSUES_SYNC y/n to enable sync       (default: n)
@@ -115,6 +116,24 @@ if [[ ! "$USER_DOCS_FOLDER" =~ ^[a-zA-Z0-9._-]+$ ]]; then
 fi
 
 ok "Docs folder: ${BOLD}$USER_DOCS_FOLDER${NC}"
+
+# BMad user skill level — controls how much agents explain concepts in chat
+if [[ "$NONINTERACTIVE" == 1 ]]; then
+  USER_SKILL_LEVEL="${BMAD_SETUP_SKILL_LEVEL:-expert}"
+else
+  echo ""
+  echo -e "  Your development experience level?"
+  echo -e "  ${DIM}Affects how much BMad agents explain concepts in chat.${NC}"
+  echo ""
+  read -rp "  Skill level (beginner|intermediate|expert) [expert]: " USER_SKILL_LEVEL
+  USER_SKILL_LEVEL="${USER_SKILL_LEVEL:-expert}"
+fi
+
+case "$USER_SKILL_LEVEL" in
+  beginner|intermediate|expert) ;;
+  *) die "Invalid skill level: '$USER_SKILL_LEVEL' (expected beginner, intermediate, or expert)" ;;
+esac
+ok "Skill level: ${BOLD}$USER_SKILL_LEVEL${NC}"
 
 # Agent tool — determines which IDE/agent BMad integrates with and, in turn,
 # where agent skills live (each tool reads them from its own directory).
@@ -244,6 +263,7 @@ fi
 
 step 4 "Checking BMad installation"
 
+BMAD_FRESH_INSTALL=false
 if [[ -d "_bmad" ]]; then
   ok "BMad core already installed"
 else
@@ -253,52 +273,73 @@ else
   # and stalls on non-TTY stdin), --modules picks the module set (core auto-added),
   # --tools targets the IDE/agent integration (required for fresh --yes installs).
   # Override the module/tool selection via BMAD_INSTALL_MODULES / BMAD_INSTALL_TOOLS.
+  #
+  # The folder config MUST be passed at install time (--output-folder / --set):
+  # the installer resolves those paths and bakes them into every generated skill
+  # file under the tool dir, so patching config.yaml afterwards leaves the
+  # skills pointing at the default _bmad-output/ and docs/ paths.
   BMAD_INSTALL_MODULES="${BMAD_INSTALL_MODULES:-bmm}"
   BMAD_INSTALL_TOOLS="${BMAD_INSTALL_TOOLS:-$AGENT_TOOL}"
   if npx bmad-method install --yes --directory . \
-       --modules "$BMAD_INSTALL_MODULES" --tools "$BMAD_INSTALL_TOOLS" </dev/null; then
+       --modules "$BMAD_INSTALL_MODULES" --tools "$BMAD_INSTALL_TOOLS" \
+       --output-folder "$USER_OUTPUT_FOLDER" \
+       --set "bmm.planning_artifacts={project-root}/$USER_OUTPUT_FOLDER/planning-artifacts" \
+       --set "bmm.implementation_artifacts={project-root}/$USER_OUTPUT_FOLDER/implementation-artifacts" \
+       --set "bmm.project_knowledge=$USER_DOCS_FOLDER" \
+       --set "bmm.user_skill_level=$USER_SKILL_LEVEL" </dev/null; then
     ok "BMad installed"
+    BMAD_FRESH_INSTALL=true
   else
     warn "BMad auto-install failed — creating minimal skeleton"
     mkdir -p _bmad/bmm/agents _bmad/core/tasks _bmad/custom
   fi
 fi
 
-# Write output_folder and project_knowledge into config.yaml
+# Ensure config.yaml carries the chosen folders. A fresh install already wrote
+# them via the --output-folder/--set flags above; the sed path below only
+# repoints configs from pre-existing installs.
 YAML_CFG="_bmad/bmm/config.yaml"
 if [[ -f "$YAML_CFG" ]]; then
-  # Update existing config — replace or append
-  # `sed -i.bak` is portable across GNU (Linux/CI) and BSD (macOS) sed.
-  if grep -qE '^[[:space:]]*output_folder[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
-    sed -i.bak "s|^\([[:space:]]*output_folder[[:space:]]*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
+  if [[ "$BMAD_FRESH_INSTALL" == true ]]; then
+    ok "config.yaml written by installer: output_folder=$USER_OUTPUT_FOLDER, project_knowledge=$USER_DOCS_FOLDER, user_skill_level=$USER_SKILL_LEVEL"
   else
-    echo "output_folder: \"{project-root}/$USER_OUTPUT_FOLDER\"" >> "$YAML_CFG"
+    # Update existing config — replace or append
+    # `sed -i.bak` is portable across GNU (Linux/CI) and BSD (macOS) sed.
+    if grep -qE '^[[:space:]]*output_folder[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
+      sed -i.bak "s|^\([[:space:]]*output_folder[[:space:]]*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
+    else
+      echo "output_folder: \"{project-root}/$USER_OUTPUT_FOLDER\"" >> "$YAML_CFG"
+    fi
+    # BMad's planning_artifacts / implementation_artifacts keys point into the
+    # output folder (they default to the {project-root}/_bmad-output/* paths), so
+    # repoint them at the chosen output folder too — otherwise BMad writes those
+    # artifacts to _bmad-output/ while the router routes the renamed folder.
+    if grep -qE '^[[:space:]]*planning_artifacts[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
+      sed -i.bak "s|^\([[:space:]]*planning_artifacts[[:space:]]*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER/planning-artifacts\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
+    else
+      echo "planning_artifacts: \"{project-root}/$USER_OUTPUT_FOLDER/planning-artifacts\"" >> "$YAML_CFG"
+    fi
+    if grep -qE '^[[:space:]]*implementation_artifacts[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
+      sed -i.bak "s|^\([[:space:]]*implementation_artifacts[[:space:]]*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER/implementation-artifacts\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
+    else
+      echo "implementation_artifacts: \"{project-root}/$USER_OUTPUT_FOLDER/implementation-artifacts\"" >> "$YAML_CFG"
+    fi
+    if grep -qE '^[[:space:]]*project_knowledge[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
+      sed -i.bak "s|^\([[:space:]]*project_knowledge[[:space:]]*:\).*|\1 \"{project-root}/$USER_DOCS_FOLDER\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
+    else
+      echo "project_knowledge: \"{project-root}/$USER_DOCS_FOLDER\"" >> "$YAML_CFG"
+    fi
+    ok "Updated config.yaml: output_folder=$USER_OUTPUT_FOLDER, project_knowledge=$USER_DOCS_FOLDER"
+    warn "Existing install: BMad bakes these paths into generated skill files —"
+    warn "run 'npx bmad-method install --action update' to regenerate them if the folders changed"
   fi
-  # BMad's planning_artifacts / implementation_artifacts keys point into the
-  # output folder (they default to the {project-root}/_bmad-output/* paths), so
-  # repoint them at the chosen output folder too — otherwise BMad writes those
-  # artifacts to _bmad-output/ while the router routes the renamed folder.
-  if grep -qE '^[[:space:]]*planning_artifacts[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
-    sed -i.bak "s|^\([[:space:]]*planning_artifacts[[:space:]]*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER/planning-artifacts\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
-  else
-    echo "planning_artifacts: \"{project-root}/$USER_OUTPUT_FOLDER/planning-artifacts\"" >> "$YAML_CFG"
-  fi
-  if grep -qE '^[[:space:]]*implementation_artifacts[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
-    sed -i.bak "s|^\([[:space:]]*implementation_artifacts[[:space:]]*:\).*|\1 \"{project-root}/$USER_OUTPUT_FOLDER/implementation-artifacts\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
-  else
-    echo "implementation_artifacts: \"{project-root}/$USER_OUTPUT_FOLDER/implementation-artifacts\"" >> "$YAML_CFG"
-  fi
-  if grep -qE '^[[:space:]]*project_knowledge[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
-    sed -i.bak "s|^\([[:space:]]*project_knowledge[[:space:]]*:\).*|\1 \"{project-root}/$USER_DOCS_FOLDER\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
-  else
-    echo "project_knowledge: \"{project-root}/$USER_DOCS_FOLDER\"" >> "$YAML_CFG"
-  fi
+  # agent_tool is bmad-router's own key — the BMad installer never writes it.
   if grep -qE '^[[:space:]]*agent_tool[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
     sed -i.bak "s|^\([[:space:]]*agent_tool[[:space:]]*:\).*|\1 \"$AGENT_TOOL\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
   else
     echo "agent_tool: \"$AGENT_TOOL\"" >> "$YAML_CFG"
   fi
-  ok "Updated config.yaml: output_folder=$USER_OUTPUT_FOLDER, project_knowledge=$USER_DOCS_FOLDER, agent_tool=$AGENT_TOOL"
+  ok "agent_tool=$AGENT_TOOL"
 else
   mkdir -p "$(dirname "$YAML_CFG")"
   cat > "$YAML_CFG" << YAML
@@ -306,6 +347,7 @@ output_folder: "{project-root}/$USER_OUTPUT_FOLDER"
 planning_artifacts: "{project-root}/$USER_OUTPUT_FOLDER/planning-artifacts"
 implementation_artifacts: "{project-root}/$USER_OUTPUT_FOLDER/implementation-artifacts"
 project_knowledge: "{project-root}/$USER_DOCS_FOLDER"
+user_skill_level: $USER_SKILL_LEVEL
 agent_tool: "$AGENT_TOOL"
 YAML
   ok "Created config.yaml with custom folder names"
@@ -326,14 +368,17 @@ for candidate in _bmad-output "$USER_OUTPUT_FOLDER"; do
   fi
 done
 
-# Same for docs
-if [[ -d "$USER_DOCS_FOLDER" && ! -L "$USER_DOCS_FOLDER" ]]; then
-  local_files=$(find "$USER_DOCS_FOLDER" -type f -not -name '.gitkeep' | head -1)
-  if [[ -z "$local_files" ]]; then
-    rm -rf "$USER_DOCS_FOLDER"
-    info "Removed empty $USER_DOCS_FOLDER/ (router will manage as symlink)"
+# Same for docs — the installer scaffolds an empty docs/ even when
+# project_knowledge points elsewhere, so sweep both.
+for candidate in docs "$USER_DOCS_FOLDER"; do
+  if [[ -d "$candidate" && ! -L "$candidate" ]]; then
+    local_files=$(find "$candidate" -type f -not -name '.gitkeep' | head -1)
+    if [[ -z "$local_files" ]]; then
+      rm -rf "$candidate"
+      info "Removed empty $candidate/ (router will manage as symlink)"
+    fi
   fi
-fi
+done
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 5: Create directory structure
@@ -726,6 +771,7 @@ echo -e "${BOLD}╚════════════════════�
 echo ""
 echo -e "  ${DIM}Output folder: $USER_OUTPUT_FOLDER${NC}"
 echo -e "  ${DIM}Docs folder:   $USER_DOCS_FOLDER${NC}"
+echo -e "  ${DIM}Skill level:   $USER_SKILL_LEVEL${NC}"
 echo -e "  ${DIM}Agent tool:    $AGENT_TOOL (skills: $SKILLS_BASE/)${NC}"
 if [[ ${#PROJECTS[@]} -gt 0 ]]; then
   echo -e "  ${DIM}Projects:      ${PROJECTS[*]}${NC}"

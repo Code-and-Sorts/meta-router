@@ -20,9 +20,10 @@ pytest tests/ -v
 
 ```bash
 shellcheck setup.sh scripts/meta-router.sh
+gh skill publish --dry-run
 ```
 
-Fix any warnings before opening a PR. The CI in `.github/workflows/ci.yml` runs both `pytest` and `shellcheck` on every push and pull request.
+Fix any warnings before opening a PR. The CI in `.github/workflows/ci.yml` runs `pytest`, `shellcheck`, and the `gh skill` format validation on every push and pull request.
 
 ## Pull request expectations
 

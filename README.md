@@ -43,6 +43,4 @@ bash scripts/meta-router.sh list                  # list projects
 
 ## Contributing
 
-Issues and PRs welcome; [CONTRIBUTING.md](CONTRIBUTING.md) covers tests, shellcheck, and PR expectations.
-
-MIT licensed; see [LICENSE](LICENSE).
+Issues and PRs welcome; [CONTRIBUTING.md](CONTRIBUTING.md) covers tests, spellcheck, and PR expectations.

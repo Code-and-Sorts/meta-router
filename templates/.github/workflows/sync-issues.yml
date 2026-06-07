@@ -82,8 +82,10 @@ jobs:
           if [ "$EVENT_NAME" = "push" ] && [ -n "$PUSH_BEFORE" ] && \
              ! echo "$PUSH_BEFORE" | grep -q '^0*$' && \
              git cat-file -e "$PUSH_BEFORE" 2>/dev/null; then
+            # NF >= 3 keeps only projects/<name>/<file> paths, so files sitting
+            # directly under projects/ are not mistaken for project names.
             CHANGED=$(git diff --name-only "$PUSH_BEFORE" "$PUSH_AFTER" -- 'projects/' \
-              | cut -d/ -f2 | sort -u | tr '\n' ' ')
+              | awk -F/ 'NF >= 3 {print $2}' | sort -u | tr '\n' ' ')
             echo "projects=$CHANGED" >> "$GITHUB_OUTPUT"
           else
             # dispatch / schedule / first push on a branch → sync everything

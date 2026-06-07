@@ -17,6 +17,7 @@ project_owner: null
 # missing). The sync also applies bmad-delivery / bmad-planning labels, which
 # the board views filter on.
 labels:
+  feature: feature
   epic: epic
   story: story
 

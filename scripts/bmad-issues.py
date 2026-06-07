@@ -747,22 +747,28 @@ def set_issue_state(repo, issue, should_close, dry_run, reason="completed"):
 
 
 def add_sub_issue(repo, parent_issue, child_issue, dry_run):
+    # replace_parent moves the child if it is already linked under an older
+    # parent (e.g. the epics moved to a newer PRD's feature issue); for an
+    # unlinked child it behaves like a plain add.
     if dry_run or not parent_issue or not child_issue:
         return
     gh_rest(
         f"repos/{repo}/issues/{parent_issue['number']}/sub_issues",
         method="POST", check=False, sub_issue_id=int(child_issue["id"]),
+        replace_parent=True,
     )
 
 
 def upsert_issue(repo, key, project_name, title, body_content, labels, issue_type,
                  existing, parent, dry_run):
     """Create or update one synced issue; returns the issue dict (or None in
-    dry-run create). New issues are linked under their parent immediately."""
+    dry-run create). Issues are (re-)linked under their parent on both create
+    and update, so a parent change (newer PRD) reconciles the hierarchy."""
     body = f"{build_marker(key, project_name)}\n\n{body_content}".strip()
     issue = existing.get(key)
     if issue:
         update_issue_body(repo, issue, body, dry_run)
+        add_sub_issue(repo, parent, issue, dry_run)
         return issue
     issue = create_issue(repo, title, body, labels, issue_type, dry_run)
     if issue:

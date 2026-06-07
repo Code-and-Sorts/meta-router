@@ -34,6 +34,10 @@ jobs:
             echo "::error::BMAD_METAREPO variable is not set (expected owner/repo of the metarepo)"
             exit 1
           fi
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::BMAD_METAREPO_TOKEN secret is not set (needs a PAT that can dispatch events to $METAREPO)"
+            exit 1
+          fi
           gh api "repos/$METAREPO/dispatches" \
             -f event_type=bmad-pr \
             -f "client_payload[story_branch]=$STORY_BRANCH" \

@@ -192,7 +192,9 @@ SKILLS_BASE="$TOOL_DIR/skills"
 KNOWLEDGE_BASE="$TOOL_DIR/knowledge"
 # The skill ships its scripts and templates; everything in the metarepo runs
 # them from the installed skill directory — there is no separate scripts/ copy.
-SKILL_SRC="$SETUP_DIR/skills/meta-router"
+# setup.sh lives inside the skill's scripts/ dir, so the skill root is one
+# level up — works from a repo clone and from a gh-skill-installed copy alike.
+SKILL_SRC="$(cd "$SETUP_DIR/.." && pwd)"
 SKILL_HOME="$SKILLS_BASE/meta-router"
 ROUTER_CMD="$SKILL_HOME/scripts/meta-router.sh"
 BOOTSTRAP_CMD="$SKILL_HOME/scripts/bmad-github-bootstrap.sh"
@@ -457,7 +459,7 @@ if [[ -f "$SKILL_SRC/scripts/meta-router.sh" ]]; then
   chmod +x "$SKILL_HOME/scripts/"*.sh
   ok "$SKILL_HOME/ (skill, scripts, templates)"
 else
-  die "Cannot find skills/meta-router/scripts/meta-router.sh relative to setup.sh"
+  die "Cannot find meta-router.sh next to setup.sh (expected $SKILL_SRC/scripts/meta-router.sh)"
 fi
 
 # Install CI workflow so the metarepo lints its bundled shell scripts.

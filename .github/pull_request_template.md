@@ -9,6 +9,6 @@
 ## Checklist
 
 - [ ] `pytest tests/ -v` passes
-- [ ] `shellcheck setup.sh skills/meta-router/scripts/*.sh` is clean
+- [ ] `shellcheck skills/meta-router/scripts/*.sh` is clean
 - [ ] README or `docs/` updated if a command or setup step changed
 - [ ] Changes are focused (one concern per PR)

@@ -16,9 +16,17 @@ BMad assumes one project per repo. If several projects share the same agents and
 
 Requirements: Node.js ≥ 20 (for BMad), git, bash. On Windows, set `core.symlinks=true` (WSL works out of the box).
 
+Via the skill: install it, then ask your agent to set up a metarepo; the skill runs setup from wherever it's installed.
+
 ```bash
-git clone https://github.com/Code-and-Sorts/meta-router meta-router
-bash meta-router/setup.sh my-metarepo
+gh skill install Code-and-Sorts/meta-router meta-router
+```
+
+Or clone and run setup yourself:
+
+```bash
+git clone https://github.com/Code-and-Sorts/meta-router
+bash meta-router/skills/meta-router/scripts/setup.sh my-metarepo
 ```
 
 Setup asks six things: output folder name (default `features`), docs folder name (default `docs`), your BMad skill level, which agent tool you use (Claude Code, GitHub Copilot, or Codex), which projects to create, and whether to enable GitHub sync. Then it installs BMad and scaffolds everything. It also runs non-interactively for CI; see the [setup environment variables](docs/reference.md#setup-environment-variables).
@@ -27,13 +35,7 @@ Setup asks six things: output folder name (default `features`), docs folder name
 
 After that, drive the metarepo either way.
 
-Use the skill: generated metarepos include the `meta-router` agent skill automatically (scripts and templates ship inside it at `.claude/skills/meta-router/`), so your agent can switch projects, cut worktrees, and run the GitHub sync on request. To install the skill for your agent anywhere else:
-
-```bash
-gh skill install Code-and-Sorts/meta-router meta-router
-```
-
-Or call the bundled script directly:
+Use the skill: generated metarepos include the `meta-router` agent skill automatically (scripts and templates ship inside it at `.claude/skills/meta-router/`), so your agent can switch projects, cut worktrees, and run the GitHub sync on request. Or call the bundled script directly:
 
 ```bash
 cd my-metarepo

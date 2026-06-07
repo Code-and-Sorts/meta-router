@@ -59,7 +59,7 @@ jobs:
           GEN="$RUNNER_TEMP/example-metarepo"
           rm -rf "$GEN"
           # Runs the real `npx bmad-method install` (network, ~minutes).
-          bash setup.sh "$GEN"
+          bash skills/meta-router/scripts/setup.sh "$GEN"
           # Overlay curated seed content over the scaffolded projects.
           for proj in alpha beta; do
             if [ -d "examples/seed/$proj" ]; then

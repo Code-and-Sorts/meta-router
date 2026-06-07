@@ -45,7 +45,7 @@ Set `BMAD_SETUP_NONINTERACTIVE=1` to skip every prompt and answer from the envir
 BMAD_SETUP_NONINTERACTIVE=1 \
   BMAD_OUTPUT_FOLDER=features BMAD_DOCS_FOLDER=docs \
   BMAD_SETUP_TOOL=claude-code BMAD_SETUP_PROJECTS=alpha,beta \
-  bash meta-router/setup.sh my-metarepo
+  bash meta-router/skills/meta-router/scripts/setup.sh my-metarepo
 ```
 
 | Variable | Effect | Default |
@@ -84,11 +84,11 @@ The meta-router repo itself, not a generated metarepo:
 
 ```text
 meta-router/
-├── setup.sh                        # Bootstrap a new metarepo
 ├── skills/
 │   └── meta-router/                # The agent skill (gh skill install); self-contained:
 │       ├── SKILL.md                #   skill definition
 │       ├── scripts/
+│       │   ├── setup.sh            #   bootstrap a new metarepo
 │       │   ├── meta-router.sh      #   context switcher
 │       │   ├── bmad-issues.py      #   GitHub Issues sync (optional)
 │       │   └── bmad-github-bootstrap.sh  # per-project board/label/template setup (optional)

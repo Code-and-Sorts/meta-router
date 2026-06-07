@@ -21,11 +21,14 @@ GitHub Issues + Projects.
 
 ## Setting up a metarepo
 
-From a clone of [meta-router](https://github.com/Code-and-Sorts/meta-router):
+The setup script ships inside this skill:
 
 ```bash
-bash meta-router/setup.sh <target-dir>
+bash <skill-dir>/scripts/setup.sh <target-dir>
 ```
+
+(`<skill-dir>` is wherever this skill is installed, e.g.
+`~/.claude/skills/meta-router` or a clone's `skills/meta-router`.)
 
 Interactive prompts cover output/docs folder names, BMad skill level, agent
 tool (`claude-code` | `github-copilot` | `codex`), projects to create, and

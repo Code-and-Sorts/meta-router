@@ -2,7 +2,7 @@
 
 Run multiple [BMad Method](https://github.com/bmad-code-org/BMad-METHOD) projects (BMad is an agent-driven planning and development workflow) out of one repo. One shared `_bmad/` core, one project active at a time, switched with a symlink swap.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/Code-and-Sorts/bmad-router/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/Code-and-Sorts/bmad-router/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/Code-and-Sorts/meta-router/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/Code-and-Sorts/meta-router/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-docs%2F-blue?style=for-the-badge)](docs/how-it-works.md)
 

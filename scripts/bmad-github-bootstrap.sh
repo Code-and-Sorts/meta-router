@@ -568,7 +568,7 @@ bootstrap_project() {
   echo ""
   echo -e "${BOLD}── $project_name ──${NC}"
 
-  [[ -f "$config" ]] || { warn "No github-sync.yaml — run: bash scripts/bmad-router.sh init $project_name (or copy templates/github-sync.yaml), then re-run"; return 1; }
+  [[ -f "$config" ]] || { warn "No github-sync.yaml — run: bash scripts/meta-router.sh init $project_name (or copy templates/github-sync.yaml), then re-run"; return 1; }
 
   # Issues default to the metarepo; repo: in github-sync.yaml overrides per
   # project for teams that want issues next to the code.

@@ -1,5 +1,5 @@
 """
-Tests for bmad-router.sh — multi-project context switcher for BMad metarepos.
+Tests for meta-router.sh — multi-project context switcher for BMad metarepos.
 Default output folder: "features". Default docs folder: "docs".
 """
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT_REL = Path("scripts") / "bmad-router.sh"
+SCRIPT_REL = Path("scripts") / "meta-router.sh"
 
 
 @pytest.fixture()
@@ -25,9 +25,9 @@ def metarepo(tmp_path: Path) -> Path:
 
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir()
-    src_script = Path(__file__).resolve().parent.parent / "scripts" / "bmad-router.sh"
-    (scripts_dir / "bmad-router.sh").write_text(src_script.read_text())
-    (scripts_dir / "bmad-router.sh").chmod(0o755)
+    src_script = Path(__file__).resolve().parent.parent / "scripts" / "meta-router.sh"
+    (scripts_dir / "meta-router.sh").write_text(src_script.read_text())
+    (scripts_dir / "meta-router.sh").chmod(0o755)
     (tmp_path / "AGENTS.md").write_text("# Test metarepo\n")
 
     return tmp_path
@@ -43,7 +43,7 @@ def run(metarepo, *args, expect_fail=False, env=None):
     )
     if not expect_fail:
         assert result.returncode == 0, (
-            f"bmad-router {' '.join(args)} failed (rc={result.returncode}):\n"
+            f"meta-router {' '.join(args)} failed (rc={result.returncode}):\n"
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
     return result
@@ -696,12 +696,12 @@ class TestCustomOutputFolder:
 
 class TestEdgeCases:
     def test_not_a_metarepo(self, tmp_path):
-        script = Path(__file__).resolve().parent.parent / "scripts" / "bmad-router.sh"
+        script = Path(__file__).resolve().parent.parent / "scripts" / "meta-router.sh"
         scripts_dir = tmp_path / "scripts"
         scripts_dir.mkdir()
-        (scripts_dir / "bmad-router.sh").write_text(script.read_text())
+        (scripts_dir / "meta-router.sh").write_text(script.read_text())
         result = subprocess.run(
-            ["bash", str(scripts_dir / "bmad-router.sh"), "list"],
+            ["bash", str(scripts_dir / "meta-router.sh"), "list"],
             cwd=tmp_path, capture_output=True, text=True,
         )
         assert result.returncode != 0

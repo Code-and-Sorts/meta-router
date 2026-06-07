@@ -27,7 +27,7 @@ TOTAL_STEPS=10
 
 # Map an agent tool to its home directory (relative to the metarepo root). Skills
 # and shared knowledge live under it (skills/ and knowledge/). Kept in sync with
-# tool_dir_for_tool in scripts/bmad-router.sh.
+# tool_dir_for_tool in scripts/meta-router.sh.
 tool_dir_for_tool() {
   case "$1" in
     claude-code)    echo ".claude" ;;
@@ -48,27 +48,39 @@ NONINTERACTIVE="${BMAD_SETUP_NONINTERACTIVE:-0}"
 echo ""
 printf '%b' "$AMBER"
 cat <<'ART'
- /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\
-( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )
- > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <
- /\_/\                                                                                                                         /\_/\
-( o.o )                                                                                                                       ( o.o )
- > ^ <   $$$$$$$\                        $$\                                $$$$$$\             $$\                            > ^ <
- /\_/\   $$  __$$\                       $$ |                              $$  __$$\            $$ |                           /\_/\
-( o.o )  $$ |  $$ | $$$$$$\  $$\   $$\ $$$$$$\    $$$$$$\   $$$$$$\        $$ /  \__| $$$$$$\ $$$$$$\   $$\   $$\  $$$$$$\    ( o.o )
- > ^ <   $$$$$$$  |$$  __$$\ $$ |  $$ |\_$$  _|  $$  __$$\ $$  __$$\       \$$$$$$\  $$  __$$\\_$$  _|  $$ |  $$ |$$  __$$\    > ^ <
- /\_/\   $$  __$$< $$ /  $$ |$$ |  $$ |  $$ |    $$$$$$$$ |$$ |  \__|       \____$$\ $$$$$$$$ | $$ |    $$ |  $$ |$$ /  $$ |   /\_/\
-( o.o )  $$ |  $$ |$$ |  $$ |$$ |  $$ |  $$ |$$\ $$   ____|$$ |            $$\   $$ |$$   ____| $$ |$$\ $$ |  $$ |$$ |  $$ |  ( o.o )
- > ^ <   $$ |  $$ |\$$$$$$  |\$$$$$$  |  \$$$$  |\$$$$$$$\ $$ |            \$$$$$$  |\$$$$$$$\  \$$$$  |\$$$$$$  |$$$$$$$  |   > ^ <
- /\_/\   \__|  \__| \______/  \______/    \____/  \_______|\__|             \______/  \_______|  \____/  \______/ $$  ____/    /\_/\
-( o.o )                                                                                                           $$ |        ( o.o )
- > ^ <                                                                                                            $$ |         > ^ <
- /\_/\                                                                                                            \__|         /\_/\
-( o.o )                                                                                                                       ( o.o )
- > ^ <                                                                                                                         > ^ <
- /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\
-( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )
- > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <
+ /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\
+( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )
+ > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <
+ /\_/\                                                                                                                  /\_/\
+( o.o )                                                                                                                ( o.o )
+ > ^ <   $$\      $$\            $$\                     $$$$$$$\                        $$\                            > ^ <
+ /\_/\   $$$\    $$$ |           $$ |                    $$  __$$\                       $$ |                           /\_/\
+( o.o )  $$$$\  $$$$ | $$$$$$\ $$$$$$\    $$$$$$\        $$ |  $$ | $$$$$$\  $$\   $$\ $$$$$$\    $$$$$$\   $$$$$$\    ( o.o )
+ > ^ <   $$\$$\$$ $$ |$$  __$$\\_$$  _|   \____$$\       $$$$$$$  |$$  __$$\ $$ |  $$ |\_$$  _|  $$  __$$\ $$  __$$\    > ^ <
+ /\_/\   $$ \$$$  $$ |$$$$$$$$ | $$ |     $$$$$$$ |      $$  __$$< $$ /  $$ |$$ |  $$ |  $$ |    $$$$$$$$ |$$ |  \__|   /\_/\
+( o.o )  $$ |\$  /$$ |$$   ____| $$ |$$\ $$  __$$ |      $$ |  $$ |$$ |  $$ |$$ |  $$ |  $$ |$$\ $$   ____|$$ |        ( o.o )
+ > ^ <   $$ | \_/ $$ |\$$$$$$$\  \$$$$  |\$$$$$$$ |      $$ |  $$ |\$$$$$$  |\$$$$$$  |  \$$$$  |\$$$$$$$\ $$ |         > ^ <
+ /\_/\   \__|     \__| \_______|  \____/  \_______|      \__|  \__| \______/  \______/    \____/  \_______|\__|         /\_/\
+( o.o )                                                                                                                ( o.o )
+ > ^ <                                                                                                                  > ^ <
+ /\_/\                                                                                                                  /\_/\
+( o.o )   $$$$$$\             $$\                                                                                      ( o.o )
+ > ^ <   $$  __$$\            $$ |                                                                                      > ^ <
+ /\_/\   $$ /  \__| $$$$$$\ $$$$$$\   $$\   $$\  $$$$$$\                                                                /\_/\
+( o.o )  \$$$$$$\  $$  __$$\\_$$  _|  $$ |  $$ |$$  __$$\                                                              ( o.o )
+ > ^ <    \____$$\ $$$$$$$$ | $$ |    $$ |  $$ |$$ /  $$ |                                                              > ^ <
+ /\_/\   $$\   $$ |$$   ____| $$ |$$\ $$ |  $$ |$$ |  $$ |                                                              /\_/\
+( o.o )  \$$$$$$  |\$$$$$$$\  \$$$$  |\$$$$$$  |$$$$$$$  |                                                             ( o.o )
+ > ^ <    \______/  \_______|  \____/  \______/ $$  ____/                                                               > ^ <
+ /\_/\                                          $$ |                                                                    /\_/\
+( o.o )                                         $$ |                                                                   ( o.o )
+ > ^ <                                          \__|                                                                    > ^ <
+ /\_/\                                                                                                                  /\_/\
+( o.o )                                                                                                                ( o.o )
+ > ^ <                                                                                                                  > ^ <
+ /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\
+( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )( o.o )
+ > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <  > ^ <
 ART
 printf '%b' "$NC"
 
@@ -219,9 +231,14 @@ if [[ -n "$USER_PROJECTS" ]]; then
     fi
     PROJECTS+=("$p")
   done
-  ok "Projects: ${BOLD}${PROJECTS[*]}${NC}"
+  if [[ "$NONINTERACTIVE" == 1 ]]; then
+    ok "Projects: ${BOLD}${PROJECTS[*]}${NC}"
+  else
+    # The read prompt already echoed the typed names — just confirm the count.
+    ok "${#PROJECTS[@]} project(s) to create"
+  fi
 else
-  info "No initial projects — you can create them later with bmad-router init"
+  info "No initial projects — you can create them later with meta-router init"
 fi
 
 # GitHub sync (Issues + Projects)
@@ -395,7 +412,7 @@ YAML
   ok "Created config.yaml with custom folder names"
 fi
 
-# agent_tool is bmad-router's own key — the BMad installer never writes it.
+# agent_tool is meta-router's own key — the BMad installer never writes it.
 # `sed -i.bak` is portable across GNU (Linux/CI) and BSD (macOS) sed.
 if grep -qE '^[[:space:]]*agent_tool[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
   sed -i.bak "s|^\([[:space:]]*agent_tool[[:space:]]*:\).*|\1 \"$AGENT_TOOL\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
@@ -436,17 +453,17 @@ ok "$SKILLS_BASE/ (always-active skills)"
 ok "$KNOWLEDGE_BASE/ (shared across all projects)"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 6: Copy bmad-router files
+# Step 6: Copy meta-router files
 # ─────────────────────────────────────────────────────────────────────────────
 
-step 6 "Installing bmad-router"
+step 6 "Installing meta-router"
 
-if [[ -f "$SETUP_DIR/scripts/bmad-router.sh" ]]; then
-  cp "$SETUP_DIR/scripts/bmad-router.sh" scripts/bmad-router.sh
-  chmod +x scripts/bmad-router.sh
-  ok "scripts/bmad-router.sh"
+if [[ -f "$SETUP_DIR/scripts/meta-router.sh" ]]; then
+  cp "$SETUP_DIR/scripts/meta-router.sh" scripts/meta-router.sh
+  chmod +x scripts/meta-router.sh
+  ok "scripts/meta-router.sh"
 else
-  die "Cannot find scripts/bmad-router.sh relative to setup.sh"
+  die "Cannot find scripts/meta-router.sh relative to setup.sh"
 fi
 
 if [[ -f "$SETUP_DIR/SKILL.md" ]]; then
@@ -485,7 +502,7 @@ if [[ ! -f "$KNOWLEDGE_BASE/shared-context.md" ]]; then
   cat > "$KNOWLEDGE_BASE/shared-context.md" << 'SHAREDCTX'
 # Shared Context
 
-<!-- Generated by bmad-router. OVERALL shared context for ALL projects in this
+<!-- Generated by meta-router. OVERALL shared context for ALL projects in this
      metarepo. BMad agents load this before every workflow, alongside the active
      project's project-context.md. Project context overrides this on conflict. -->
 
@@ -667,8 +684,8 @@ point to the active project:
 
 ### Before starting any work
 
-1. Check which project is active: \`bash scripts/bmad-router.sh current\`
-2. Switch if needed: \`bash scripts/bmad-router.sh switch <project-name>\`
+1. Check which project is active: \`bash scripts/meta-router.sh current\`
+2. Switch if needed: \`bash scripts/meta-router.sh switch <project-name>\`
 3. Read the overall shared context (\`$KNOWLEDGE_BASE/shared-context.md\`) and the
    active project's context (\`$USER_OUTPUT_FOLDER/project-context.md\`). Project
    context overrides shared context on conflict.
@@ -677,10 +694,10 @@ point to the active project:
 ### Switching projects
 
 \`\`\`bash
-bash scripts/bmad-router.sh list              # see all projects
-bash scripts/bmad-router.sh switch <name>     # switch context
-bash scripts/bmad-router.sh init <name>       # create new project
-bash scripts/bmad-router.sh validate          # health check
+bash scripts/meta-router.sh list              # see all projects
+bash scripts/meta-router.sh switch <name>     # switch context
+bash scripts/meta-router.sh init <name>       # create new project
+bash scripts/meta-router.sh validate          # health check
 \`\`\`
 
 ## Agent skills
@@ -722,12 +739,12 @@ fi
 
 # .gitignore
 if [[ -f ".gitignore" ]]; then
-  if grep -q "# bmad-router" .gitignore 2>/dev/null; then
-    info ".gitignore already has bmad-router rules"
+  if grep -q "# meta-router" .gitignore 2>/dev/null; then
+    info ".gitignore already has meta-router rules"
   else
     cat >> .gitignore << GITIGNORE
 
-# ── bmad-router managed ─────────────────────────────────────────────────────
+# ── meta-router managed ─────────────────────────────────────────────────────
 # Output + docs symlinks at the repo root (recreated on switch). Anchored with a
 # leading slash so the per-project projects/*/$USER_OUTPUT_FOLDER artifacts stay tracked.
 /$USER_OUTPUT_FOLDER
@@ -743,7 +760,7 @@ $SKILLS_BASE/project
 # Personal BMad customization overrides
 _bmad/custom/*.user.toml
 GITIGNORE
-    ok "Appended bmad-router rules to .gitignore"
+    ok "Appended meta-router rules to .gitignore"
   fi
 else
   cat > .gitignore << GITIGNORE
@@ -762,7 +779,7 @@ else
 projects/*/repos/
 projects/*/implementation/
 
-# Project skills symlink (managed by bmad-router)
+# Project skills symlink (managed by meta-router)
 $SKILLS_BASE/project
 
 # Personal BMad customization overrides (team overrides are committed)
@@ -820,18 +837,18 @@ ART
 printf '%b' "$NC"
 
 if [[ ${#PROJECTS[@]} -eq 0 ]]; then
-  info "No projects to create. Run: bash scripts/bmad-router.sh init <name>"
+  info "No projects to create. Run: bash scripts/meta-router.sh init <name>"
 else
   # Scaffold without switching (and without the router's per-file chatter);
   # switch once at the end — only the last switch matters. Router errors still
   # surface on stderr.
   for project in "${PROJECTS[@]}"; do
     info "Creating project: ${BOLD}$project${NC}"
-    bash scripts/bmad-router.sh init "$project" --no-switch >/dev/null
+    bash scripts/meta-router.sh init "$project" --no-switch >/dev/null
     ok "Initialized $project"
   done
   LAST_PROJECT="${PROJECTS[$((${#PROJECTS[@]}-1))]}"
-  bash scripts/bmad-router.sh switch "$LAST_PROJECT" >/dev/null
+  bash scripts/meta-router.sh switch "$LAST_PROJECT" >/dev/null
   ok "Active project: ${BOLD}$LAST_PROJECT${NC}"
 fi
 
@@ -865,7 +882,7 @@ elif [[ "$NONINTERACTIVE" == 1 ]]; then
   info "Non-interactive mode — boards are not created automatically"
   print_github_sync_next_steps
 elif [[ ${#CANDIDATE_PROJECTS[@]} -eq 0 ]]; then
-  info "No projects yet — create one with bmad-router init, then bootstrap its board"
+  info "No projects yet — create one with meta-router init, then bootstrap its board"
   print_github_sync_next_steps
 elif ! command -v gh &>/dev/null || ! gh auth status &>/dev/null; then
   warn "gh CLI missing or not authenticated — boards can't be created from here"
@@ -978,6 +995,6 @@ if [[ ${#PROJECTS[@]} -gt 0 ]]; then
 fi
 echo ""
 echo -e "  ${BOLD}Quick start:${NC}"
-echo -e "    ${CYAN}bash scripts/bmad-router.sh list${NC}"
-echo -e "    ${CYAN}bash scripts/bmad-router.sh switch <project>${NC}"
+echo -e "    ${CYAN}bash scripts/meta-router.sh list${NC}"
+echo -e "    ${CYAN}bash scripts/meta-router.sh switch <project>${NC}"
 echo ""

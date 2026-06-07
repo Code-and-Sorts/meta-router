@@ -82,7 +82,7 @@ jobs:
           # lint its bundled router shell script. Gates publishing the example on
           # this passing. (The router's own pytest suite lives in this source repo,
           # not in generated metarepos, and is run by this repo's own ci.yml.)
-          shellcheck --severity=error scripts/bmad-router.sh
+          shellcheck --severity=error scripts/meta-router.sh
 
       - name: Force-push generated tree to example branch
         env:

@@ -1,4 +1,4 @@
-# bmad-router override for the BMad `bmad-create-story` skill.
+# meta-router override for the BMad `bmad-create-story` skill.
 #
 # Copied into _bmad/custom/bmad-create-story.toml by setup.sh. Sparse,
 # committed (team-scope) override; arrays append to the skill defaults.
@@ -11,7 +11,7 @@
 [workflow]
 
 activation_steps_append = [
-  "Run `bash scripts/bmad-router.sh repos` to list the active project's configured source repos so you know the available repo names.",
+  "Run `bash scripts/meta-router.sh repos` to list the active project's configured source repos so you know the available repo names.",
 ]
 
 # The "file:" entry loads the metarepo's overall shared context — org-wide
@@ -19,6 +19,6 @@ activation_steps_append = [
 # The __KNOWLEDGE_DIR__ placeholder is tool-agnostic; setup.sh resolves it to the
 # configured agent tool's knowledge dir (.claude/, .github/, .codex/, .agents/).
 persistent_facts = [
-  "Every story file MUST include a '## Affected Repos' section listing, one per line as `- <repo-name>`, which of the project's source repos the story touches. A backend-only story lists one repo; a full-stack story lists several (e.g. web, gql-aggregator, api). Use the exact repo names shown by `bash scripts/bmad-router.sh repos` — bmad-router creates a git worktree per listed repo when the story is implemented.",
+  "Every story file MUST include a '## Affected Repos' section listing, one per line as `- <repo-name>`, which of the project's source repos the story touches. A backend-only story lists one repo; a full-stack story lists several (e.g. web, gql-aggregator, api). Use the exact repo names shown by `bash scripts/meta-router.sh repos` — meta-router creates a git worktree per listed repo when the story is implemented.",
   "file:{project-root}/__KNOWLEDGE_DIR__/shared-context.md",
 ]

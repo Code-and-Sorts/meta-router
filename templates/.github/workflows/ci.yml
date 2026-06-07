@@ -1,6 +1,6 @@
 name: CI
 
-# CI for a bmad-router metarepo. Installed by setup.sh into the metarepo's
+# CI for a meta-router metarepo. Installed by setup.sh into the metarepo's
 # .github/workflows/. Lints the bundled router shell script on every pull
 # request and on pushes to main.
 

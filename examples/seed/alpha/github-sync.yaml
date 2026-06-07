@@ -2,7 +2,7 @@
 #
 # For the live showcase, issues are created in this very repo so the feature is
 # testable end-to-end. In a real metarepo this would point at alpha's own source repo.
-repo: Code-and-Sorts/bmad-router
+repo: Code-and-Sorts/meta-router
 
 # No Project board for the demo — issues sync without one. Run
 # scripts/bmad-github-bootstrap.sh alpha to create a private board.

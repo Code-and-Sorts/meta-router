@@ -2,7 +2,7 @@
 name: router-project-switch
 description: >
   Switch the active BMad project context in a multi-project metarepo. Use this skill whenever the
-  user says "switch project", "switch to <project>", "bmad-router", "change project context",
+  user says "switch project", "switch to <project>", "meta router", "meta-router", "change project context",
   "list projects", "which project", "active project", "current project", or references working on
   a different project within the metarepo. Also trigger when a BMad workflow targets the wrong
   project or a symlink is missing/broken. Manages five symlinks: output folder (features by

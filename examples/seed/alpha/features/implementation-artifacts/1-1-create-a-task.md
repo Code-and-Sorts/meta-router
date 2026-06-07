@@ -2,7 +2,7 @@
 
 Status: ready-for-dev
 
-> Example artifact for the bmad-router `example` branch. The **Affected Repos**
+> Example artifact for the meta-router `example` branch. The **Affected Repos**
 > section below is what the `bmad-dev-story` customization reads to decide how
 > many git worktrees to create — here, two.
 
@@ -31,7 +31,7 @@ work is tracked from one place.
 
 ## Dev Notes
 
-This is a full-stack story. When implemented, bmad-router creates a worktree per
+This is a full-stack story. When implemented, meta-router creates a worktree per
 affected repo:
 
 ```

@@ -1,27 +1,29 @@
-# bmad-router
+<img src="docs/images/banner.svg" alt="Meta Router" width="100%">
 
 Run multiple [BMad Method](https://github.com/bmad-code-org/BMad-METHOD) projects out of one repo. One shared `_bmad/` core, one project active at a time, switched with a symlink swap.
 
 BMad assumes one project per repo. If several projects share the same agents and workflows, you'd otherwise duplicate `_bmad/` everywhere. This keeps a single core and isolates each project's artifacts.
 
-[Browse a live example →](https://github.com/Code-and-Sorts/bmad-router/tree/example) — a generated metarepo with two projects, sample artifacts, and the worktree setup. Regenerated on every push to `main`.
+> Meta Router is an independent tool that builds on the BMad Method — it is not affiliated with or endorsed by the BMad project.
+
+[Browse a live example →](https://github.com/Code-and-Sorts/meta-router/tree/example) — a generated metarepo with two projects, sample artifacts, and the worktree setup. Regenerated on every push to `main`.
 
 ## Quick start
 
 Requirements: Node.js ≥ 20 (for BMad), git, bash.
 
 ```bash
-git clone https://github.com/Code-and-Sorts/bmad-router bmad-router
-bash bmad-router/setup.sh my-metarepo
+git clone https://github.com/Code-and-Sorts/meta-router meta-router
+bash meta-router/setup.sh my-metarepo
 ```
 
 Setup asks four things — output folder name (default `features`), docs folder name (default `docs`), which agent tool you use (Claude Code, GitHub Copilot, or Codex), and which projects to create — then installs BMad and scaffolds everything. After that:
 
 ```bash
 cd my-metarepo
-bash scripts/bmad-router.sh init food-inventory   # create + switch to a project
-bash scripts/bmad-router.sh switch camera-app     # change active project
-bash scripts/bmad-router.sh list                  # list projects
+bash scripts/meta-router.sh init food-inventory   # create + switch to a project
+bash scripts/meta-router.sh switch camera-app     # change active project
+bash scripts/meta-router.sh list                  # list projects
 ```
 
 ![Setup](docs/images/01-setup.png)
@@ -32,7 +34,7 @@ bash scripts/bmad-router.sh list                  # list projects
 BMAD_SETUP_NONINTERACTIVE=1 \
   BMAD_OUTPUT_FOLDER=features BMAD_DOCS_FOLDER=docs \
   BMAD_SETUP_TOOL=claude-code BMAD_SETUP_PROJECTS=alpha,beta \
-  bash bmad-router/setup.sh my-metarepo
+  bash meta-router/setup.sh my-metarepo
 ```
 
 ## What switching does
@@ -68,7 +70,7 @@ The `.claude` directory follows your agent tool: `.github` for Copilot, `.codex`
 ## Commands
 
 ```bash
-bash scripts/bmad-router.sh <command>
+bash scripts/meta-router.sh <command>
 ```
 
 | Command | Does |
@@ -114,10 +116,10 @@ repos:
 ```
 
 ```bash
-bash scripts/bmad-router.sh clone                                  # clone all (or: clone web)
-bash scripts/bmad-router.sh worktree 1-2-account-management web api  # one worktree per repo
-bash scripts/bmad-router.sh worktree 1-2-account-management --all    # every repo
-bash scripts/bmad-router.sh worktree-rm 1-2-account-management      # tear down
+bash scripts/meta-router.sh clone                                  # clone all (or: clone web)
+bash scripts/meta-router.sh worktree 1-2-account-management web api  # one worktree per repo
+bash scripts/meta-router.sh worktree 1-2-account-management --all    # every repo
+bash scripts/meta-router.sh worktree-rm 1-2-account-management      # tear down
 ```
 
 Worktrees land at `projects/<name>/implementation/<story-id>/<repo>/` (gitignored), each on branch `story/<story-id>`. The story id is the story's `development_status` key from `sprint-status.yaml` — the GitHub sync keys PR detection off that branch name. A full-stack story can span several repos at once.
@@ -162,10 +164,10 @@ Router tests in `tests/test_bmad_router.py`, issue-sync tests in `tests/test_bma
 ## File manifest
 
 ```markdown
-bmad-router/
+meta-router/
 ├── setup.sh                        # Bootstrap a new metarepo
 ├── scripts/
-│   ├── bmad-router.sh              # Context switcher (copied into metarepo)
+│   ├── meta-router.sh              # Context switcher (copied into metarepo)
 │   └── bmad-issues.py              # GitHub Issues sync (optional)
 ├── templates/
 │   ├── .github/workflows/

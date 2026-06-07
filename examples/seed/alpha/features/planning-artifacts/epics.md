@@ -1,6 +1,6 @@
 # Alpha Tasks - Epic Breakdown
 
-> Example artifact for the bmad-router `example` branch, in the BMad v6
+> Example artifact for the meta-router `example` branch, in the BMad v6
 > epics.md shape (`## Epic N:` / `### Story N.M:` headers — the GitHub sync
 > joins these to development_status keys by the epic/story numbers).
 

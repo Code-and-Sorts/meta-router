@@ -198,7 +198,7 @@ def strip_project_root(value):
 
 def resolve_output_folder(project_dir):
     """Resolve the project's output folder name from BMad config, mirroring
-    the resolution order in scripts/bmad-router.sh."""
+    the resolution order in scripts/meta-router.sh."""
     env_value = os.environ.get("BMAD_OUTPUT_FOLDER")
     if env_value:
         return env_value
@@ -1131,7 +1131,7 @@ def main():
 
     project = args.project or get_active_project()
     if not project:
-        die("No active project. Run: bmad-router switch <project>  or pass --project")
+        die("No active project. Run: meta-router switch <project>  or pass --project")
 
     if args.command == "status":
         cmd_status(project)

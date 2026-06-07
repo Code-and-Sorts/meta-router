@@ -1,6 +1,6 @@
 # Architecture Decisions — Alpha
 
-> Example `project_knowledge` doc for the bmad-router `example` branch.
+> Example `project_knowledge` doc for the meta-router `example` branch.
 
 ## ADR-001: Shared GraphQL schema is the contract between web and api
 

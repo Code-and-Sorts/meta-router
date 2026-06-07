@@ -1,6 +1,6 @@
 # Alpha — Product Requirements Document
 
-> Example artifact. Generated for the bmad-router `example` branch to show what a
+> Example artifact. Generated for the meta-router `example` branch to show what a
 > populated project looks like.
 
 ## Summary

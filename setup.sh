@@ -429,7 +429,7 @@ step 5 "Creating directory structure"
 
 mkdir -p projects
 mkdir -p scripts
-mkdir -p "$SKILLS_BASE/router-project-switch"
+mkdir -p "$SKILLS_BASE/meta-router"
 mkdir -p "$KNOWLEDGE_BASE"
 
 ok "projects/"
@@ -451,9 +451,10 @@ else
   die "Cannot find scripts/meta-router.sh relative to setup.sh"
 fi
 
-if [[ -f "$SETUP_DIR/SKILL.md" ]]; then
-  cp "$SETUP_DIR/SKILL.md" "$SKILLS_BASE/router-project-switch/SKILL.md"
-  ok "$SKILLS_BASE/router-project-switch/SKILL.md"
+ROUTER_SKILL_SRC="$SETUP_DIR/skills/meta-router/SKILL.md"
+if [[ -f "$ROUTER_SKILL_SRC" ]]; then
+  cp "$ROUTER_SKILL_SRC" "$SKILLS_BASE/meta-router/SKILL.md"
+  ok "$SKILLS_BASE/meta-router/SKILL.md"
 fi
 
 # Install CI workflow so the metarepo lints its bundled shell script.
@@ -691,7 +692,7 @@ This metarepo targets the **$AGENT_TOOL** agent tool, so agent skills live in
 \`$SKILLS_BASE/\`. Skills are organized by scope:
 
 - \`$SKILLS_BASE/<name>/\` — always-available skills (each is a directory with a
-  \`SKILL.md\`). Includes \`router-project-switch\` and any org-wide skills.
+  \`SKILL.md\`). Includes \`meta-router\` and any org-wide skills.
 - \`$SKILLS_BASE/project/\` — symlink to the active project's skills.
   Only available when that project is switched in.
 - \`$KNOWLEDGE_BASE/\` — shared documentation available to all projects.

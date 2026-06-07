@@ -32,6 +32,12 @@ bash scripts/meta-router.sh list                  # list projects
 
 ![Setup](docs/images/01-setup.png)
 
+Generated metarepos include the `meta-router` agent skill automatically. To install it for your agent anywhere else:
+
+```bash
+gh skill install Code-and-Sorts/meta-router meta-router
+```
+
 `switch` repoints a handful of symlinks at the repo root (`features/`, `docs/`, skills, `repos/`, `implementation/`) so BMad reads and writes the active project's artifacts; nothing is copied or deleted.
 
 ## Documentation

@@ -20,7 +20,7 @@ def metarepo(tmp_path: Path) -> Path:
     (tmp_path / "projects").mkdir()
     # Default agent tool is claude-code, so skills and shared knowledge live
     # under the .claude home directory.
-    (tmp_path / ".claude" / "skills" / "router-project-switch").mkdir(parents=True)
+    (tmp_path / ".claude" / "skills" / "meta-router").mkdir(parents=True)
     (tmp_path / ".claude" / "knowledge").mkdir(parents=True)
 
     scripts_dir = tmp_path / "scripts"

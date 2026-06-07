@@ -27,7 +27,7 @@ bash scripts/meta-router.sh <command>
 
 ## Configuration
 
-Folder names and the agent tool resolve in order: **env var → `_bmad/bmm/config.yaml` → default**. Setup writes your choices into `config.yaml`, so the router picks them up afterward.
+Folder names and the agent tool resolve in order: **env var → `_bmad/bmm/config.yaml` → `_bmad/config.toml` → default**. Setup writes your choices into `config.yaml`, so the router picks them up afterward.
 
 | Setting | Env var | config.yaml key | Default |
 | --- | --- | --- | --- |
@@ -103,7 +103,8 @@ meta-router/
 ├── .github/workflows/
 │   ├── ci.yml                      # pytest + shellcheck (this repo)
 │   └── generate-example.yml        # Publishes the example branch on push to main
-├── SKILL.md                        # Agent skill definition
+├── skills/
+│   └── meta-router/                # Agent skill (gh skill install)
 ├── tests/                          # Router + issue-sync test suites
 └── docs/                           # This documentation + README screenshots
 ```

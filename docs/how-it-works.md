@@ -30,7 +30,7 @@ All symlinks move together, so there's no split-brain where output and docs poin
 - `projects/<name>/features/`: that project's BMad output, meaning PRD, architecture, epics, stories, sprint status, `project-context.md`.
 - `projects/<name>/docs/`: that project's `project_knowledge`.
 - `projects/<name>/<tool-home>/skills/`: agent skills that activate only when the project is switched in.
-- `<tool-home>/skills/<name>/`: always-active skills (e.g. `router-project-switch`).
+- `<tool-home>/skills/<name>/`: always-active skills (e.g. `meta-router`).
 - `<tool-home>/knowledge/`: shared docs available to every project.
 - `<tool-home>/knowledge/shared-context.md`: overall shared context (org-wide standards) loaded for every project, alongside each project's `project-context.md`.
 - `projects/<name>/repos.yaml`: manifest of the project's source repos (tracked). Clones and worktrees are gitignored.

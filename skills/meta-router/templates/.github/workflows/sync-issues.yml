@@ -99,11 +99,11 @@ jobs:
           PROJECTS: ${{ steps.detect.outputs.projects }}
         run: |
           if [ "$PROJECTS" = "--all" ]; then
-            python scripts/bmad-issues.py sync --all
+            python __SKILLS_DIR__/meta-router/scripts/bmad-issues.py sync --all
           else
             for project in $PROJECTS; do
               if [ -f "projects/$project/github-sync.yaml" ]; then
-                python scripts/bmad-issues.py sync --project "$project"
+                python __SKILLS_DIR__/meta-router/scripts/bmad-issues.py sync --project "$project"
               else
                 echo "Skipping $project (no github-sync.yaml)"
               fi

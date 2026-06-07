@@ -6,4 +6,4 @@ branch `story/1-1-create-a-task`. It is gitignored; this placeholder exists only
 
 Created on a real checkout with:
 
-    bash scripts/meta-router.sh worktree 1-1-create-a-task web api
+    bash .claude/skills/meta-router/scripts/meta-router.sh worktree 1-1-create-a-task web api

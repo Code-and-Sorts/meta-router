@@ -19,7 +19,7 @@ pytest tests/ -v
 ## Linting
 
 ```bash
-shellcheck setup.sh scripts/meta-router.sh
+shellcheck setup.sh skills/meta-router/scripts/*.sh
 gh skill publish --dry-run
 ```
 

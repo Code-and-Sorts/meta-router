@@ -9,7 +9,7 @@ Does NOT test GitHub API calls (those need gh CLI auth).
 from pathlib import Path
 
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "meta-router" / "scripts"))
 import importlib
 bmad_issues = importlib.import_module("bmad-issues")
 

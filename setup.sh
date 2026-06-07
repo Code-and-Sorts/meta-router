@@ -27,7 +27,7 @@ TOTAL_STEPS=10
 
 # Map an agent tool to its home directory (relative to the metarepo root). Skills
 # and shared knowledge live under it (skills/ and knowledge/). Kept in sync with
-# tool_dir_for_tool in scripts/meta-router.sh.
+# tool_dir_for_tool in skills/meta-router/scripts/meta-router.sh.
 tool_dir_for_tool() {
   case "$1" in
     claude-code)    echo ".claude" ;;
@@ -190,6 +190,12 @@ esac
 TOOL_DIR="$(tool_dir_for_tool "$AGENT_TOOL")"
 SKILLS_BASE="$TOOL_DIR/skills"
 KNOWLEDGE_BASE="$TOOL_DIR/knowledge"
+# The skill ships its scripts and templates; everything in the metarepo runs
+# them from the installed skill directory — there is no separate scripts/ copy.
+SKILL_SRC="$SETUP_DIR/skills/meta-router"
+SKILL_HOME="$SKILLS_BASE/meta-router"
+ROUTER_CMD="$SKILL_HOME/scripts/meta-router.sh"
+BOOTSTRAP_CMD="$SKILL_HOME/scripts/bmad-github-bootstrap.sh"
 ok "Agent tool: ${BOLD}$AGENT_TOOL${NC} ${DIM}(skills: $SKILLS_BASE/, knowledge: $KNOWLEDGE_BASE/)${NC}"
 
 # Initial projects
@@ -281,7 +287,7 @@ if [[ "$ENABLE_GH_PROJECTS" == true ]]; then
   if command -v gh &>/dev/null; then
     ok "gh $(gh --version | head -n1 | cut -d' ' -f3)"
   else
-    warn "gh CLI not found — needed locally for scripts/bmad-github-bootstrap.sh (https://cli.github.com)"
+    warn "gh CLI not found — needed locally for the skill's bmad-github-bootstrap.sh (https://cli.github.com)"
   fi
 fi
 
@@ -443,24 +449,21 @@ ok "$KNOWLEDGE_BASE/ (shared across all projects)"
 
 step 6 "Installing meta-router"
 
-if [[ -f "$SETUP_DIR/scripts/meta-router.sh" ]]; then
-  cp "$SETUP_DIR/scripts/meta-router.sh" scripts/meta-router.sh
-  chmod +x scripts/meta-router.sh
-  ok "scripts/meta-router.sh"
+# The whole skill ships into the metarepo: SKILL.md plus the scripts and the
+# templates those scripts reference, so the skill directory is self-contained.
+if [[ -f "$SKILL_SRC/scripts/meta-router.sh" ]]; then
+  mkdir -p "$SKILL_HOME"
+  cp -R "$SKILL_SRC/." "$SKILL_HOME/"
+  chmod +x "$SKILL_HOME/scripts/"*.sh
+  ok "$SKILL_HOME/ (skill, scripts, templates)"
 else
-  die "Cannot find scripts/meta-router.sh relative to setup.sh"
+  die "Cannot find skills/meta-router/scripts/meta-router.sh relative to setup.sh"
 fi
 
-ROUTER_SKILL_SRC="$SETUP_DIR/skills/meta-router/SKILL.md"
-if [[ -f "$ROUTER_SKILL_SRC" ]]; then
-  cp "$ROUTER_SKILL_SRC" "$SKILLS_BASE/meta-router/SKILL.md"
-  ok "$SKILLS_BASE/meta-router/SKILL.md"
-fi
-
-# Install CI workflow so the metarepo lints its bundled shell script.
-if [[ -f "$SETUP_DIR/templates/.github/workflows/ci.yml" ]]; then
+# Install CI workflow so the metarepo lints its bundled shell scripts.
+if [[ -f "$SKILL_SRC/templates/.github/workflows/ci.yml" ]]; then
   mkdir -p .github/workflows
-  cp "$SETUP_DIR/templates/.github/workflows/ci.yml" .github/workflows/ci.yml
+  cp "$SKILL_SRC/templates/.github/workflows/ci.yml" .github/workflows/ci.yml
   ok ".github/workflows/ci.yml"
 fi
 
@@ -533,11 +536,11 @@ fi
 
 # Install BMad customization overrides that drive per-story git worktrees.
 # These hook the bmad-dev-story / bmad-create-story skills via _bmad/custom/.
-if [[ -d "$SETUP_DIR/templates/bmad-custom" && -d "_bmad" ]]; then
+if [[ -d "$SKILL_SRC/templates/bmad-custom" && -d "_bmad" ]]; then
   mkdir -p _bmad/custom
   for f in bmad-dev-story.toml bmad-create-story.toml worktree-workflow.md; do
-    if [[ -f "$SETUP_DIR/templates/bmad-custom/$f" && ! -f "_bmad/custom/$f" ]]; then
-      cp "$SETUP_DIR/templates/bmad-custom/$f" "_bmad/custom/$f"
+    if [[ -f "$SKILL_SRC/templates/bmad-custom/$f" && ! -f "_bmad/custom/$f" ]]; then
+      cp "$SKILL_SRC/templates/bmad-custom/$f" "_bmad/custom/$f"
       ok "_bmad/custom/$f"
     fi
   done
@@ -554,6 +557,14 @@ if [[ -d "$SETUP_DIR/templates/bmad-custom" && -d "_bmad" ]]; then
       sed -i.bak -E "s|file:\{project-root\}/[^\"]*shared-context.md|file:{project-root}/$KNOWLEDGE_BASE/shared-context.md|g" "_bmad/custom/$f" && rm -f "_bmad/custom/$f.bak"
     fi
   done
+  # Same idea for router invocations: the templates reference the router via a
+  # tool-agnostic __SKILLS_DIR__ placeholder; resolve it (or a prior tool's
+  # path) to the installed skill location.
+  for f in bmad-dev-story.toml bmad-create-story.toml worktree-workflow.md; do
+    if [[ -f "_bmad/custom/$f" ]] && grep -q 'meta-router.sh' "_bmad/custom/$f"; then
+      sed -i.bak -E "s|bash [^\`[:space:]]*meta-router\.sh|bash $ROUTER_CMD|g" "_bmad/custom/$f" && rm -f "_bmad/custom/$f.bak"
+    fi
+  done
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -563,33 +574,22 @@ fi
 step 7 "Installing GitHub sync files"
 
 if [[ "$ENABLE_GH_PROJECTS" == true ]]; then
-  # Copy sync + bootstrap scripts
-  for script in bmad-issues.py bmad-github-bootstrap.sh; do
-    if [[ -f "$SETUP_DIR/scripts/$script" ]]; then
-      cp "$SETUP_DIR/scripts/$script" "scripts/$script"
-      [[ "$script" == *.sh ]] && chmod +x "scripts/$script"
-      ok "scripts/$script"
-    fi
-  done
-
-  # Copy sync workflow (the bmad-pr-ping.yml template stays in templates/ —
-  # it gets installed into each project's SOURCE repos, not the metarepo)
-  if [[ -f "$SETUP_DIR/templates/.github/workflows/sync-issues.yml" ]]; then
+  # The sync + bootstrap scripts already ship inside the skill (step 6); only
+  # the metarepo-level workflow needs installing. Point it at the skill's copy
+  # of bmad-issues.py. (bmad-pr-ping.yml stays in the skill's templates — it
+  # gets installed into each project's SOURCE repos, not the metarepo.)
+  if [[ -f "$SKILL_SRC/templates/.github/workflows/sync-issues.yml" ]]; then
     mkdir -p .github/workflows
-    cp "$SETUP_DIR/templates/.github/workflows/sync-issues.yml" .github/workflows/
+    cp "$SKILL_SRC/templates/.github/workflows/sync-issues.yml" .github/workflows/
+    sed -i.bak "s|__SKILLS_DIR__|$SKILLS_BASE|g" .github/workflows/sync-issues.yml && rm -f .github/workflows/sync-issues.yml.bak
     ok ".github/workflows/sync-issues.yml"
-  fi
-  if [[ -f "$SETUP_DIR/templates/.github/workflows/bmad-pr-ping.yml" ]]; then
-    mkdir -p templates
-    cp "$SETUP_DIR/templates/.github/workflows/bmad-pr-ping.yml" templates/bmad-pr-ping.yml
-    ok "templates/bmad-pr-ping.yml (install into each source repo)"
   fi
 
   # Copy sync config template into each project
-  if [[ -f "$SETUP_DIR/templates/github-sync.yaml" ]]; then
+  if [[ -f "$SKILL_SRC/templates/github-sync.yaml" ]]; then
     for project in "${PROJECTS[@]}"; do
       if [[ -d "projects/$project" && ! -f "projects/$project/github-sync.yaml" ]]; then
-        cp "$SETUP_DIR/templates/github-sync.yaml" "projects/$project/github-sync.yaml"
+        cp "$SKILL_SRC/templates/github-sync.yaml" "projects/$project/github-sync.yaml"
         ok "projects/$project/github-sync.yaml (edit repo field)"
       fi
     done
@@ -670,8 +670,8 @@ point to the active project:
 
 ### Before starting any work
 
-1. Check which project is active: \`bash scripts/meta-router.sh current\`
-2. Switch if needed: \`bash scripts/meta-router.sh switch <project-name>\`
+1. Check which project is active: \`bash $ROUTER_CMD current\`
+2. Switch if needed: \`bash $ROUTER_CMD switch <project-name>\`
 3. Read the overall shared context (\`$KNOWLEDGE_BASE/shared-context.md\`) and the
    active project's context (\`$USER_OUTPUT_FOLDER/project-context.md\`). Project
    context overrides shared context on conflict.
@@ -680,10 +680,10 @@ point to the active project:
 ### Switching projects
 
 \`\`\`bash
-bash scripts/meta-router.sh list              # see all projects
-bash scripts/meta-router.sh switch <name>     # switch context
-bash scripts/meta-router.sh init <name>       # create new project
-bash scripts/meta-router.sh validate          # health check
+bash $ROUTER_CMD list              # see all projects
+bash $ROUTER_CMD switch <name>     # switch context
+bash $ROUTER_CMD init <name>       # create new project
+bash $ROUTER_CMD validate          # health check
 \`\`\`
 
 ## Agent skills
@@ -823,18 +823,18 @@ ART
 printf '%b' "$NC"
 
 if [[ ${#PROJECTS[@]} -eq 0 ]]; then
-  info "No projects to create. Run: bash scripts/meta-router.sh init <name>"
+  info "No projects to create. Run: bash $ROUTER_CMD init <name>"
 else
   # Scaffold without switching (and without the router's per-file chatter);
   # switch once at the end — only the last switch matters. Router errors still
   # surface on stderr.
   for project in "${PROJECTS[@]}"; do
     info "Creating project: ${BOLD}$project${NC}"
-    bash scripts/meta-router.sh init "$project" --no-switch >/dev/null
+    bash "$ROUTER_CMD" init "$project" --no-switch >/dev/null
     ok "Initialized $project"
   done
   LAST_PROJECT="${PROJECTS[$((${#PROJECTS[@]}-1))]}"
-  bash scripts/meta-router.sh switch "$LAST_PROJECT" >/dev/null
+  bash "$ROUTER_CMD" switch "$LAST_PROJECT" >/dev/null
   ok "Active project: ${BOLD}$LAST_PROJECT${NC}"
 fi
 
@@ -851,8 +851,20 @@ print_github_sync_next_steps() {
   info "To finish GitHub sync setup later:"
   echo -e "  1. Push this metarepo to GitHub — issues are created here by default"
   echo -e "     ${DIM}(or point a project at its source repo via repo: in github-sync.yaml)${NC}"
-  echo -e "  2. Run: ${CYAN}bash scripts/bmad-github-bootstrap.sh --all${NC}"
+  echo -e "  2. Run: ${CYAN}bash $BOOTSTRAP_CMD --all${NC}"
   echo -e "     ${DIM}Creates the private board(s) and prints the remaining manual steps.${NC}"
+}
+
+# Printed ONCE per setup run (the bootstrap script prints the same block when
+# run standalone; setup suppresses that per-project copy to avoid repetition).
+print_remaining_sync_setup() {
+  echo ""
+  echo -e "${BOLD}Remaining setup (once per org / per source repo):${NC}"
+  echo -e "  - Org secret ${CYAN}BMAD_PROJECT_TOKEN${NC}: fine-grained PAT with org Projects"
+  echo -e "    read/write + Issues read/write + Pull requests read on the metarepo"
+  echo -e "    and all source repos (the sync workflow refuses to run without it)"
+  echo -e "  - In each source repo: install ${CYAN}$SKILL_HOME/templates/.github/workflows/bmad-pr-ping.yml${NC},"
+  echo -e "    set variable ${CYAN}BMAD_METAREPO${NC} and secret ${CYAN}BMAD_METAREPO_TOKEN${NC}"
 }
 
 # Every project in the metarepo is a candidate, not just ones created this
@@ -872,6 +884,27 @@ elif [[ ${#CANDIDATE_PROJECTS[@]} -eq 0 ]]; then
   print_github_sync_next_steps
 elif ! command -v gh &>/dev/null || ! gh auth status &>/dev/null; then
   warn "gh CLI missing or not authenticated — boards can't be created from here"
+  print_github_sync_next_steps
+elif [[ -z "$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)" ]]; then
+  # Fresh metarepos have no GitHub remote yet, so boards (whose issues live
+  # here) can't be created during setup — but the org project template doesn't
+  # need the push. Offer it now: the views are built once and every future
+  # board copies them.
+  info "No GitHub remote yet — boards are created after you push this metarepo"
+  echo ""
+  echo -e "  The ${BOLD}org project template${NC} can be set up now though: build the board"
+  echo -e "  views once and every future board copies them automatically."
+  read -rp "  Set up the org project template now? [Y/n]: " SETUP_TEMPLATE
+  case "$(printf '%s' "$SETUP_TEMPLATE" | tr '[:upper:]' '[:lower:]')" in
+    n|no)
+      info "Skipped — run later: bash $BOOTSTRAP_CMD --template"
+      ;;
+    *)
+      if ! bash "$BOOTSTRAP_CMD" --template; then
+        warn "Template setup didn't finish — re-run: bash $BOOTSTRAP_CMD --template"
+      fi
+      ;;
+  esac
   print_github_sync_next_steps
 else
   # Issues live in this metarepo unless a project's github-sync.yaml sets
@@ -898,7 +931,7 @@ else
       PROJECT_REPO="$METAREPO_SLUG"
     fi
     if [[ -z "$PROJECT_REPO" ]]; then
-      info "Skipped $project — push this metarepo to GitHub first (issues live there), then run: bash scripts/bmad-github-bootstrap.sh $project"
+      info "Skipped $project — push this metarepo to GitHub first (issues live there), then run: bash $BOOTSTRAP_CMD $project"
       continue
     fi
 
@@ -913,18 +946,22 @@ else
     read -rp "  Create private board(s) for ${#PENDING_PROJECTS[@]} project(s) now? [Y/n]: " CREATE_BOARDS
     CREATE_BOARDS_LC="$(printf '%s' "$CREATE_BOARDS" | tr '[:upper:]' '[:lower:]')"
     if [[ "$CREATE_BOARDS_LC" == "n" || "$CREATE_BOARDS_LC" == "no" ]]; then
-      info "Skipped — run: bash scripts/bmad-github-bootstrap.sh --all"
+      info "Skipped — run: bash $BOOTSTRAP_CMD --all"
       print_github_sync_next_steps
     else
       BOOTSTRAPPED_ANY=false
       for project in "${PENDING_PROJECTS[@]}"; do
-        if bash scripts/bmad-github-bootstrap.sh "$project"; then
+        # Suppress the bootstrap's per-run "Remaining setup" block; it is
+        # printed once for the whole batch below.
+        if BMAD_BOOTSTRAP_SKIP_NEXT_STEPS=1 bash "$BOOTSTRAP_CMD" "$project"; then
           BOOTSTRAPPED_ANY=true
         else
-          warn "Bootstrap failed for $project — fix the issue and re-run: bash scripts/bmad-github-bootstrap.sh $project"
+          warn "Bootstrap failed for $project — fix the issue and re-run: bash $BOOTSTRAP_CMD $project"
         fi
       done
-      if [[ "$BOOTSTRAPPED_ANY" != true ]]; then
+      if [[ "$BOOTSTRAPPED_ANY" == true ]]; then
+        print_remaining_sync_setup
+      else
         print_github_sync_next_steps
       fi
     fi
@@ -981,6 +1018,6 @@ if [[ ${#PROJECTS[@]} -gt 0 ]]; then
 fi
 echo ""
 echo -e "  ${BOLD}Quick start:${NC}"
-echo -e "    ${CYAN}bash scripts/meta-router.sh list${NC}"
-echo -e "    ${CYAN}bash scripts/meta-router.sh switch <project>${NC}"
+echo -e "    ${CYAN}bash $ROUTER_CMD list${NC}"
+echo -e "    ${CYAN}bash $ROUTER_CMD switch <project>${NC}"
 echo ""

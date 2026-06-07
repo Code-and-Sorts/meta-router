@@ -13,7 +13,7 @@ from repo-root-relative paths and never need the `projects/<name>/` path:
 ```
 <metarepo root>/
 ├── repos.yaml -> projects/<active>/repos.yaml is NOT symlinked; use
-│                 `bash scripts/meta-router.sh repos` to list configured repos
+│                 `bash __SKILLS_DIR__/meta-router/scripts/meta-router.sh repos` to list configured repos
 ├── repos/            -> projects/<active>/repos/            (git clones, gitignored)
 │   ├── web/
 │   ├── gql-aggregator/
@@ -26,7 +26,7 @@ from repo-root-relative paths and never need the `projects/<name>/` path:
 ```
 
 - The project's repo manifest is `repos.yaml`; list it with
-  `bash scripts/meta-router.sh repos`. Each entry has `name`, `url`, `branch`.
+  `bash __SKILLS_DIR__/meta-router/scripts/meta-router.sh repos`. Each entry has `name`, `url`, `branch`.
 - `repos/<name>/` is a full clone, created by `clone`. Never edit code here.
 - `implementation/<story-id>/<name>/` is an isolated worktree off the matching
   clone, checked out on branch `story/<story-id>`. Implement story code here.
@@ -46,34 +46,34 @@ repo.
 ## Procedure
 
 1. **Identify affected repos.** Read the story's `## Affected Repos` section. The
-   listed names match the output of `bash scripts/meta-router.sh repos`.
+   listed names match the output of `bash __SKILLS_DIR__/meta-router/scripts/meta-router.sh repos`.
 2. **Ensure clones exist.** For each affected repo not yet under `repos/`, run:
    ```bash
-   bash scripts/meta-router.sh clone <repo>
+   bash __SKILLS_DIR__/meta-router/scripts/meta-router.sh clone <repo>
    ```
 3. **Create the worktrees.** One command creates a worktree per affected repo:
    ```bash
-   bash scripts/meta-router.sh worktree <story-id> <repo> [<repo> ...]
+   bash __SKILLS_DIR__/meta-router/scripts/meta-router.sh worktree <story-id> <repo> [<repo> ...]
    # or, to target every configured repo:
-   bash scripts/meta-router.sh worktree <story-id> --all
+   bash __SKILLS_DIR__/meta-router/scripts/meta-router.sh worktree <story-id> --all
    ```
 4. **Implement inside the worktrees.** Make all changes under
    `implementation/<story-id>/<repo>/`. Commit on the `story/<story-id>` branch in
    each repo. Do not edit `repos/<repo>/` directly.
 5. **Review the worktrees.** List active ones any time with:
    ```bash
-   bash scripts/meta-router.sh worktree list
+   bash __SKILLS_DIR__/meta-router/scripts/meta-router.sh worktree list
    ```
 6. **Clean up after merge.** Once the story's branches are merged, remove all of
    its worktrees:
    ```bash
-   bash scripts/meta-router.sh worktree-rm <story-id>
+   bash __SKILLS_DIR__/meta-router/scripts/meta-router.sh worktree-rm <story-id>
    ```
 
 ## Notes
 
 - `repos/` and `implementation/` are root symlinks to the active project; they
-  repoint automatically when you `bash scripts/meta-router.sh switch <project>`.
+  repoint automatically when you `bash __SKILLS_DIR__/meta-router/scripts/meta-router.sh switch <project>`.
 - Worktrees and clones are gitignored — the metarepo tracks planning artifacts
   and `repos.yaml`, not source code.
 - The branch name is always `story/<story-id>`; re-running `worktree` for an

@@ -198,7 +198,7 @@ def strip_project_root(value):
 
 def resolve_output_folder(project_dir):
     """Resolve the project's output folder name from BMad config, mirroring
-    the resolution order in scripts/meta-router.sh."""
+    the resolution order in the meta-router skill's meta-router.sh."""
     env_value = os.environ.get("BMAD_OUTPUT_FOLDER")
     if env_value:
         return env_value
@@ -593,7 +593,7 @@ class ProjectBoard:
         if not project:
             warn(
                 f"GitHub Project #{number} not found for '{owner}' — issues will "
-                f"sync without board updates. Run scripts/bmad-github-bootstrap.sh"
+                f"sync without board updates. Run the skill's bmad-github-bootstrap.sh"
             )
             return
 
@@ -1065,7 +1065,7 @@ def sync_project(project_name, dry_run):
     if not config.get("project"):
         warn(
             "No GitHub Project configured — issues sync without a board. "
-            f"Run: scripts/bmad-github-bootstrap.sh {project_name}"
+            f"Run the skill's bmad-github-bootstrap.sh {project_name}"
         )
         board = ProjectBoard.__new__(ProjectBoard)
         board.dry_run = dry_run

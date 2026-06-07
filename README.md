@@ -21,21 +21,26 @@ git clone https://github.com/Code-and-Sorts/meta-router meta-router
 bash meta-router/setup.sh my-metarepo
 ```
 
-Setup asks six things: output folder name (default `features`), docs folder name (default `docs`), your BMad skill level, which agent tool you use (Claude Code, GitHub Copilot, or Codex), which projects to create, and whether to enable GitHub sync. Then it installs BMad and scaffolds everything. It also runs non-interactively for CI; see the [setup environment variables](docs/reference.md#setup-environment-variables). After that:
-
-```bash
-cd my-metarepo
-bash scripts/meta-router.sh init food-inventory   # create + switch to a project
-bash scripts/meta-router.sh switch camera-app     # change active project
-bash scripts/meta-router.sh list                  # list projects
-```
+Setup asks six things: output folder name (default `features`), docs folder name (default `docs`), your BMad skill level, which agent tool you use (Claude Code, GitHub Copilot, or Codex), which projects to create, and whether to enable GitHub sync. Then it installs BMad and scaffolds everything. It also runs non-interactively for CI; see the [setup environment variables](docs/reference.md#setup-environment-variables).
 
 ![Setup](docs/images/01-setup.png)
 
-Generated metarepos include the `meta-router` agent skill automatically. To install it for your agent anywhere else:
+After that, drive the metarepo either way.
+
+Use the skill: generated metarepos include the `meta-router` agent skill automatically (scripts and templates ship inside it at `.claude/skills/meta-router/`), so your agent can switch projects, cut worktrees, and run the GitHub sync on request. To install the skill for your agent anywhere else:
 
 ```bash
 gh skill install Code-and-Sorts/meta-router meta-router
+```
+
+Or call the bundled script directly:
+
+```bash
+cd my-metarepo
+router=.claude/skills/meta-router/scripts/meta-router.sh   # .github or .codex for other tools
+bash $router init food-inventory   # create + switch to a project
+bash $router switch camera-app     # change active project
+bash $router list                  # list projects
 ```
 
 `switch` repoints a handful of symlinks at the repo root (`features/`, `docs/`, skills, `repos/`, `implementation/`) so BMad reads and writes the active project's artifacts; nothing is copied or deleted.
@@ -49,4 +54,4 @@ gh skill install Code-and-Sorts/meta-router meta-router
 
 ## Contributing
 
-Issues and PRs welcome; [CONTRIBUTING.md](CONTRIBUTING.md) covers tests, spellcheck, and PR expectations.
+Issues and PRs welcome; [CONTRIBUTING.md](CONTRIBUTING.md) covers tests, shellcheck, and PR expectations.

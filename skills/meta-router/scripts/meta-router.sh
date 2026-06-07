@@ -17,8 +17,17 @@ set -euo pipefail
 # <tool>/knowledge/ for shared knowledge, the latter always available.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# The script lives inside the skill directory (<tool>/skills/meta-router/
+# scripts/), so its own location no longer marks the metarepo root — it runs
+# from the root instead, validated by check_metarepo (_bmad/ must exist).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SKILL_DIR="$(dirname "$SCRIPT_DIR")"
+REPO_ROOT="$(pwd)"
+# How this script and its sibling are invoked from the metarepo root, used in
+# seeded files and hints (e.g. ".claude/skills/meta-router/scripts/meta-router.sh").
+SKILL_DIR_REL="${SKILL_DIR#"$REPO_ROOT"/}"
+ROUTER_SELF="$SKILL_DIR_REL/scripts/meta-router.sh"
+BOOTSTRAP_SELF="$SKILL_DIR_REL/scripts/bmad-github-bootstrap.sh"
 
 BMAD_CORE="$REPO_ROOT/_bmad"
 PROJECTS_DIR="$REPO_ROOT/projects"
@@ -348,11 +357,11 @@ TMPL
   fi
 
   # Seed github-sync.yaml — config for the GitHub Issues + Projects sync.
-  # Create the board with scripts/bmad-github-bootstrap.sh.
+  # Create the board with the skill's bmad-github-bootstrap.sh.
   if [[ ! -f "$PROJECTS_DIR/$project_name/github-sync.yaml" ]]; then
     cat > "$PROJECTS_DIR/$project_name/github-sync.yaml" << 'TMPL'
 # GitHub sync configuration for this project.
-# Used by scripts/bmad-issues.py and the sync-issues GitHub Action.
+# Used by the meta-router skill's bmad-issues.py and the sync-issues GitHub Action.
 
 # Optional: the GitHub repo where delivery issues (epics + stories) are
 # created. Defaults to the metarepo — set this only if you want a project's
@@ -360,9 +369,9 @@ TMPL
 # always created in the metarepo.
 # repo: owner/repo
 
-# GitHub Project (v2) board for this project. Filled in by
-# scripts/bmad-github-bootstrap.sh — leave null to sync issues without a
-# board. project_owner defaults to the owner of the issues repo.
+# GitHub Project (v2) board for this project. Filled in by the skill's
+# bmad-github-bootstrap.sh — leave null to sync issues without a board.
+# project_owner defaults to the owner of the issues repo.
 project: null
 project_owner: null
 
@@ -376,7 +385,7 @@ labels:
 # Set false to skip the "Planning: <project>" checklist issue in the metarepo.
 planning: true
 TMPL
-    info "Seeded github-sync.yaml (create the board with scripts/bmad-github-bootstrap.sh $project_name)"
+    info "Seeded github-sync.yaml (create the board with bash $BOOTSTRAP_SELF $project_name)"
   fi
 
   # Seed repos/ README
@@ -390,10 +399,11 @@ independently of the metarepo.
 
 Populate it with:
 
-    bash scripts/meta-router.sh clone
+    bash __ROUTER__ clone
 
 Per-story worktrees are created from these clones under `../implementation/`.
 TMPL
+    sed -i.bak "s|__ROUTER__|$ROUTER_SELF|g" "$repos_dir/README.md" && rm -f "$repos_dir/README.md.bak"
   fi
 
   # Seed implementation/ README
@@ -407,12 +417,13 @@ clone in `../repos/`. This folder is gitignored.
 
 Create worktrees for a story (one per affected repo) with:
 
-    bash scripts/meta-router.sh worktree <story-id> [repo...]
+    bash __ROUTER__ worktree <story-id> [repo...]
 
 and tear them down with:
 
-    bash scripts/meta-router.sh worktree-rm <story-id>
+    bash __ROUTER__ worktree-rm <story-id>
 TMPL
+    sed -i.bak "s|__ROUTER__|$ROUTER_SELF|g" "$impl_dir/README.md" && rm -f "$impl_dir/README.md.bak"
   fi
 
   # .gitkeep for empty dirs
@@ -1095,7 +1106,7 @@ cmd_validate() {
     elif grep -qE '^project:[[:space:]]*[0-9]+' "$sync_yaml"; then
       ok "github-sync.yaml (project board configured)"
     else
-      info "github-sync.yaml present, board not created — run scripts/bmad-github-bootstrap.sh $active"
+      info "github-sync.yaml present, board not created — run bash $BOOTSTRAP_SELF $active"
     fi
 
     # Source repos + worktrees (clones/worktrees are gitignored — absence is not an error)

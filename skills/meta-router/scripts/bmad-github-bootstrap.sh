@@ -20,14 +20,21 @@ set -euo pipefail
 # every board. If it doesn't exist, the script offers to create it (one-time,
 # guided, with API verification of the views before marking it as a template).
 #
-# Usage:
-#   bash scripts/bmad-github-bootstrap.sh <project-name>
-#   bash scripts/bmad-github-bootstrap.sh --all        # every project missing a board
-#   bash scripts/bmad-github-bootstrap.sh --template   # create/verify the org template only
+# Usage (from the metarepo root; the script ships inside the meta-router
+# skill, e.g. .claude/skills/meta-router/scripts/):
+#   bash <skills>/meta-router/scripts/bmad-github-bootstrap.sh <project-name>
+#   bash <skills>/meta-router/scripts/bmad-github-bootstrap.sh --all        # every project missing a board
+#   bash <skills>/meta-router/scripts/bmad-github-bootstrap.sh --template   # create/verify the org template only
 # ─────────────────────────────────────────────────────────────────────────────
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The script lives inside the skill directory, so its own location no longer
+# marks the metarepo root — it runs from the root instead (where projects/
+# lives), matching meta-router.sh.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_DIR="$(dirname "$SCRIPT_DIR")"
+REPO_ROOT="$(pwd)"
 PROJECTS_DIR="$REPO_ROOT/projects"
+SKILL_DIR_REL="${SKILL_DIR#"$REPO_ROOT"/}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -568,7 +575,7 @@ bootstrap_project() {
   echo ""
   echo -e "${BOLD}── $project_name ──${NC}"
 
-  [[ -f "$config" ]] || { warn "No github-sync.yaml — run: bash scripts/meta-router.sh init $project_name (or copy templates/github-sync.yaml), then re-run"; return 1; }
+  [[ -f "$config" ]] || { warn "No github-sync.yaml — run: bash $SKILL_DIR_REL/scripts/meta-router.sh init $project_name (or copy $SKILL_DIR_REL/templates/github-sync.yaml), then re-run"; return 1; }
 
   # Issues default to the metarepo; repo: in github-sync.yaml overrides per
   # project for teams that want issues next to the code.
@@ -689,14 +696,18 @@ main() {
     bootstrap_project "$target" || failures=1
   fi
 
-  echo ""
-  echo -e "${BOLD}Remaining setup (once per org / per source repo):${NC}"
-  echo -e "  - Org secret ${CYAN}BMAD_PROJECT_TOKEN${NC}: fine-grained PAT with org Projects"
-  echo -e "    read/write + Issues read/write + Pull requests read on the metarepo"
-  echo -e "    and all source repos (the sync workflow refuses to run without it)"
-  echo -e "  - In each source repo: install ${CYAN}templates/.github/workflows/bmad-pr-ping.yml${NC},"
-  echo -e "    set variable ${CYAN}BMAD_METAREPO${NC} and secret ${CYAN}BMAD_METAREPO_TOKEN${NC}"
-  echo ""
+  # setup.sh bootstraps several projects in one run and prints this block once
+  # itself, so it suppresses the per-run copy here.
+  if [[ "${BMAD_BOOTSTRAP_SKIP_NEXT_STEPS:-0}" != 1 ]]; then
+    echo ""
+    echo -e "${BOLD}Remaining setup (once per org / per source repo):${NC}"
+    echo -e "  - Org secret ${CYAN}BMAD_PROJECT_TOKEN${NC}: fine-grained PAT with org Projects"
+    echo -e "    read/write + Issues read/write + Pull requests read on the metarepo"
+    echo -e "    and all source repos (the sync workflow refuses to run without it)"
+    echo -e "  - In each source repo: install ${CYAN}$SKILL_DIR_REL/templates/.github/workflows/bmad-pr-ping.yml${NC},"
+    echo -e "    set variable ${CYAN}BMAD_METAREPO${NC} and secret ${CYAN}BMAD_METAREPO_TOKEN${NC}"
+    echo ""
+  fi
   return "$failures"
 }
 

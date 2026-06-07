@@ -5,7 +5,7 @@
 repo: Code-and-Sorts/meta-router
 
 # No Project board for the demo — issues sync without one. Run
-# scripts/bmad-github-bootstrap.sh alpha to create a private board.
+# .claude/skills/meta-router/scripts/bmad-github-bootstrap.sh alpha to create a private board.
 project: null
 project_owner: null
 

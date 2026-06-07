@@ -46,7 +46,7 @@ metarepo/
 ├── active-project.txt
 ├── .claude/                            # Agent tool home — tool-specific dir (see below)
 │   ├── skills/
-│   │   ├── meta-router/                # Always-active skill (flat, not nested)
+│   │   ├── meta-router/                # This skill: SKILL.md + scripts/ + templates/
 │   │   └── project -> ...              # Per-project skills symlink
 │   └── knowledge/                      # Shared docs (all projects)
 │       └── shared-context.md           # Overall shared context (all projects)
@@ -94,7 +94,9 @@ An unrecognized tool falls back to the tool-agnostic `.agents/` home.
 
 ## Commands
 
-All run from the metarepo root: `bash scripts/meta-router.sh <command>`
+The scripts ship inside this skill. All run from the metarepo root:
+`bash <tool-home>/skills/meta-router/scripts/meta-router.sh <command>`
+(`<tool-home>` is `.claude`, `.github`, or `.codex` — see Config Resolution).
 
 | Command | Description |
 |---|---|
@@ -154,16 +156,17 @@ Story sub-issues driven by `sprint-status.yaml` and the PRDs; `bmad-planning`:
 one planning checklist issue per project). Setup, per project, in a metarepo
 pushed to GitHub:
 
-1. `bash scripts/bmad-github-bootstrap.sh <project>` — creates the private
-   board, labels, and issue types (first run can save an org-level view
-   template so later boards copy their views).
+1. `bash <tool-home>/skills/meta-router/scripts/bmad-github-bootstrap.sh <project>`
+   creates the private board, labels, and issue types (first run can save an
+   org-level view template so later boards copy their views).
 2. Add a `BMAD_PROJECT_TOKEN` secret: PAT with Projects read/write, Issues
    read/write, Pull requests read. The default `GITHUB_TOKEN` cannot access
    Projects v2.
-3. Install `templates/.github/workflows/bmad-pr-ping.yml` into each source repo
-   so story PRs update the board immediately.
+3. Install the skill's `templates/.github/workflows/bmad-pr-ping.yml` into each
+   source repo so story PRs update the board immediately.
 
-Run the sync locally with `python scripts/bmad-issues.py sync --dry-run`
+Run the sync locally with
+`python <tool-home>/skills/meta-router/scripts/bmad-issues.py sync --dry-run`
 (`--all` for every configured project; needs `gh` authenticated). The sync is
 the single writer of issue state: BMad statuses map to Backlog / Ready /
 In Progress / In Review / Done, an open PR on a `story/<key>` branch forces

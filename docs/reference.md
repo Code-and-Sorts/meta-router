@@ -1,11 +1,11 @@
 # Reference
 
-Commands, configuration, and environment variables. Run router commands from the metarepo root.
+Commands, configuration, and environment variables. Run router commands from the metarepo root. The scripts ship inside the meta-router skill; paths below use the Claude Code tool home (`.claude`), so substitute `.github` or `.codex` if that's your agent tool.
 
 ## Commands
 
 ```bash
-bash scripts/meta-router.sh <command>
+bash .claude/skills/meta-router/scripts/meta-router.sh <command>
 ```
 
 | Command | Does |
@@ -64,7 +64,7 @@ BMAD_SETUP_NONINTERACTIVE=1 \
 ## Issue sync CLI
 
 ```bash
-python scripts/bmad-issues.py [sync|status] [--project NAME] [--all] [--dry-run]
+python .claude/skills/meta-router/scripts/bmad-issues.py [sync|status] [--project NAME] [--all] [--dry-run]
 ```
 
 | Flag | Does |
@@ -74,7 +74,7 @@ python scripts/bmad-issues.py [sync|status] [--project NAME] [--all] [--dry-run]
 | `--all` | every configured project |
 | `--dry-run`, `-n` | print actions without writing |
 
-For example, `python scripts/bmad-issues.py sync --all --dry-run` previews the sync for every configured project.
+For example, `python .claude/skills/meta-router/scripts/bmad-issues.py sync --all --dry-run` previews the sync for every configured project.
 
 Needs `gh` authenticated. Setup and behavior live in [GitHub sync](github-sync.md).
 
@@ -85,26 +85,29 @@ The meta-router repo itself, not a generated metarepo:
 ```text
 meta-router/
 ├── setup.sh                        # Bootstrap a new metarepo
-├── scripts/
-│   ├── meta-router.sh              # Context switcher (copied into metarepo)
-│   ├── bmad-issues.py              # GitHub Issues sync (optional)
-│   └── bmad-github-bootstrap.sh    # Per-project board/label/template setup (optional)
-├── templates/
-│   ├── .github/workflows/
-│   │   ├── ci.yml                  # Metarepo CI (shellcheck), installed into each metarepo
-│   │   ├── sync-issues.yml         # GitHub Action (optional)
-│   │   └── bmad-pr-ping.yml        # Installed into source repos; pings the sync on story PRs
-│   ├── bmad-custom/                # BMad overrides → _bmad/custom/
-│   │   ├── bmad-dev-story.toml     #   create per-story worktrees on implement
-│   │   ├── bmad-create-story.toml  #   add "## Affected Repos" to stories
-│   │   └── worktree-workflow.md    #   the worktree procedure (loaded as context)
-│   └── github-sync.yaml            # Per-project sync config template
+├── skills/
+│   └── meta-router/                # The agent skill (gh skill install); self-contained:
+│       ├── SKILL.md                #   skill definition
+│       ├── scripts/
+│       │   ├── meta-router.sh      #   context switcher
+│       │   ├── bmad-issues.py      #   GitHub Issues sync (optional)
+│       │   └── bmad-github-bootstrap.sh  # per-project board/label/template setup (optional)
+│       └── templates/
+│           ├── .github/workflows/
+│           │   ├── ci.yml          #   metarepo CI (shellcheck), installed into each metarepo
+│           │   ├── sync-issues.yml #   GitHub Action (optional)
+│           │   └── bmad-pr-ping.yml  # installed into source repos; pings the sync on story PRs
+│           ├── bmad-custom/        #   BMad overrides → _bmad/custom/
+│           │   ├── bmad-dev-story.toml     # create per-story worktrees on implement
+│           │   ├── bmad-create-story.toml  # add "## Affected Repos" to stories
+│           │   └── worktree-workflow.md    # the worktree procedure (loaded as context)
+│           └── github-sync.yaml    #   per-project sync config template
 ├── examples/seed/                  # Seed content overlaid onto the example branch
 ├── .github/workflows/
-│   ├── ci.yml                      # pytest + shellcheck (this repo)
+│   ├── ci.yml                      # pytest + shellcheck + skill validation (this repo)
 │   └── generate-example.yml        # Publishes the example branch on push to main
-├── skills/
-│   └── meta-router/                # Agent skill (gh skill install)
 ├── tests/                          # Router + issue-sync test suites
 └── docs/                           # This documentation + README screenshots
 ```
+
+Setup copies the whole skill directory into the metarepo at `<tool-home>/skills/meta-router/`, so a generated metarepo runs everything from there; it has no separate `scripts/` directory.

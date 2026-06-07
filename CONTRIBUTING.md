@@ -28,8 +28,8 @@ Fix any warnings before opening a PR. The CI in `.github/workflows/ci.yml` runs 
 
 - Tests pass (`pytest tests/ -v`) and shellcheck is clean.
 - Keep changes focused — one concern per PR.
-- If you add a new `meta-router.sh` command, update the Commands table in `README.md`.
-- If you change setup behaviour, verify the non-interactive path still works (see the `BMAD_SETUP_NONINTERACTIVE` env vars documented in `README.md`).
+- If you add a new `meta-router.sh` command, update the Commands table in `docs/reference.md`.
+- If you change setup behaviour, verify the non-interactive path still works (see the `BMAD_SETUP_NONINTERACTIVE` env vars documented in `docs/reference.md`).
 
 ## Reporting issues
 

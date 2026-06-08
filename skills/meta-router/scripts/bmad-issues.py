@@ -30,12 +30,17 @@ Uses the `gh` CLI for all GitHub interaction. Requires a token that can write
 issues in the target repos and the Project (the default Actions GITHUB_TOKEN
 cannot access Projects v2 — use a fine-grained PAT via BMAD_PROJECT_TOKEN).
 
+Run from the metarepo root. This script ships inside the meta-router skill, so
+its path follows the agent tool's home dir (.claude / .github / .codex); the
+examples below use Claude Code.
+
 Usage:
-    python scripts/bmad-issues.py                     # sync active project
-    python scripts/bmad-issues.py --project food-inventory
-    python scripts/bmad-issues.py --all               # every configured project
-    python scripts/bmad-issues.py --dry-run
-    python scripts/bmad-issues.py status --project food-inventory
+    SKILL=.claude/skills/meta-router/scripts
+    python $SKILL/bmad-issues.py                     # sync active project
+    python $SKILL/bmad-issues.py --project food-inventory
+    python $SKILL/bmad-issues.py --all               # every configured project
+    python $SKILL/bmad-issues.py --dry-run
+    python $SKILL/bmad-issues.py status --project food-inventory
 """
 
 import argparse

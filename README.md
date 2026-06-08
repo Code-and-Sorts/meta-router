@@ -31,8 +31,6 @@ bash meta-router/skills/meta-router/scripts/setup.sh my-metarepo
 
 Setup asks six things: output folder name (default `features`), docs folder name (default `docs`), your BMad skill level, which agent tool you use (Claude Code, GitHub Copilot, or Codex), which projects to create, and whether to enable GitHub sync. Then it installs BMad and scaffolds everything. It also runs non-interactively for CI; see the [setup environment variables](docs/reference.md#setup-environment-variables).
 
-![Setup](docs/images/01-setup.png)
-
 After that, drive the metarepo either way.
 
 Use the skill: generated metarepos include the `meta-router` agent skill automatically (scripts and templates ship inside it at `.claude/skills/meta-router/`), so your agent can switch projects, cut worktrees, and run the GitHub sync on request. Or call the bundled script directly:

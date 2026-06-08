@@ -436,12 +436,10 @@ done
 step 5 "Creating directory structure"
 
 mkdir -p projects
-mkdir -p scripts
 mkdir -p "$SKILLS_BASE/meta-router"
 mkdir -p "$KNOWLEDGE_BASE"
 
 ok "projects/"
-ok "scripts/"
 ok "$SKILLS_BASE/ (always-active skills)"
 ok "$KNOWLEDGE_BASE/ (shared across all projects)"
 

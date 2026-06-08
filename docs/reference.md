@@ -21,9 +21,45 @@ bash .claude/skills/meta-router/scripts/meta-router.sh <command>
 | `worktree list` | list story worktrees |
 | `worktree-rm <story>` | remove a story's worktrees |
 
-![Listing and switching](images/03-list-switch.png)
-![Current state and config](images/04-current-config.png)
-![Validate](images/05-validate.png)
+`list` marks the active project and counts each project's skills; `current` shows where the active project's symlinks point:
+
+```text
+$ bash .claude/skills/meta-router/scripts/meta-router.sh list
+Projects:  (output: features, docs: docs)
+  ○ camera-app
+  ● food-inventory (active)
+
+$ bash .claude/skills/meta-router/scripts/meta-router.sh current
+● Active project: food-inventory
+  output: features -> projects/food-inventory/features
+  docs:   docs -> projects/food-inventory/docs
+  repos:  repos -> projects/food-inventory/repos
+  impl:   implementation -> projects/food-inventory/implementation
+  skills: .claude/skills/project (0 skill(s))
+```
+
+`validate` checks the symlinks, agent home, and the active project's artifact dirs:
+
+```text
+$ bash .claude/skills/meta-router/scripts/meta-router.sh validate
+Validating BMad metarepo...
+  output: features | docs: docs | tool: claude-code (skills: .claude/skills/)
+
+✓ _bmad/
+✓ projects/
+✓ .claude/ (agent tool home)
+✓ AGENTS.md
+✓ .claude/knowledge/ (shared)
+✓ .claude/knowledge/shared-context.md (shared context)
+✓ features symlink → projects/food-inventory/features (valid)
+✓ docs symlink → projects/food-inventory/docs (valid)
+✓ repos symlink → projects/food-inventory/repos (valid)
+✓ implementation symlink → projects/food-inventory/implementation (valid)
+✓ .claude/skills/project symlink (valid)
+✓ active-project.txt → food-inventory
+...
+✓ All checks passed.
+```
 
 ## Configuration
 
@@ -107,7 +143,7 @@ meta-router/
 │   ├── ci.yml                      # pytest + shellcheck + skill validation (this repo)
 │   └── generate-example.yml        # Publishes the example branch on push to main
 ├── tests/                          # Router + issue-sync test suites
-└── docs/                           # This documentation + README screenshots
+└── docs/                           # This documentation + banner image
 ```
 
 Setup copies the whole skill directory into the metarepo at `<tool-home>/skills/meta-router/`, so a generated metarepo runs everything from there; it has no separate `scripts/` directory.

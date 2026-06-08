@@ -50,7 +50,11 @@ from pathlib import Path
 
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+# This script ships inside the meta-router skill (<tool-home>/skills/meta-router/
+# scripts/), so its own location no longer marks the metarepo root. Run it from
+# the metarepo root — matching meta-router.sh / bmad-github-bootstrap.sh, and how
+# the sync workflow invokes it.
+REPO_ROOT = Path.cwd()
 PROJECTS_DIR = REPO_ROOT / "projects"
 ACTIVE_FILE = REPO_ROOT / "active-project.txt"
 

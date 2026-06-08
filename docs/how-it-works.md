@@ -24,7 +24,28 @@ All symlinks move together, so there's no split-brain where output and docs poin
 
 ## Layout
 
-![File structure](images/02-tree.png)
+```text
+my-metarepo/
+├── _bmad/                          # shared BMad core
+├── features -> projects/food-inventory/features      # active project's symlinks
+├── docs -> projects/food-inventory/docs
+├── repos -> projects/food-inventory/repos
+├── implementation -> projects/food-inventory/implementation
+├── active-project.txt
+├── .claude/                        # agent tool home (.github / .codex for other tools)
+│   ├── skills/meta-router/         # the skill: SKILL.md + scripts/ + templates/
+│   └── knowledge/shared-context.md # overall shared context (all projects)
+├── projects/
+│   ├── food-inventory/             # active
+│   │   ├── features/               # PRD, architecture, epics, sprint status, project-context.md
+│   │   ├── docs/                   # project knowledge
+│   │   ├── .claude/skills/         # project-specific skills
+│   │   ├── repos.yaml              # source-repo manifest (tracked)
+│   │   ├── repos/                  # clones (gitignored)
+│   │   └── implementation/         # per-story worktrees (gitignored)
+│   └── camera-app/
+└── AGENTS.md
+```
 
 - `_bmad/`: shared BMad core (agents, workflows, tasks), installed once.
 - `projects/<name>/features/`: that project's BMad output, meaning PRD, architecture, epics, stories, sprint status, `project-context.md`.

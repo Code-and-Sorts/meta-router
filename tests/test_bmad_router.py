@@ -1,5 +1,5 @@
 """
-Tests for bmad-router.sh — multi-project context switcher for BMad metarepos.
+Tests for meta-router.sh — multi-project context switcher for BMad metarepos.
 Default output folder: "features". Default docs folder: "docs".
 """
 
@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT_REL = Path("scripts") / "bmad-router.sh"
+# The router ships inside the skill directory, mirroring a real metarepo.
+SCRIPT_REL = Path(".claude") / "skills" / "meta-router" / "scripts" / "meta-router.sh"
 
 
 @pytest.fixture()
@@ -20,14 +21,16 @@ def metarepo(tmp_path: Path) -> Path:
     (tmp_path / "projects").mkdir()
     # Default agent tool is claude-code, so skills and shared knowledge live
     # under the .claude home directory.
-    (tmp_path / ".claude" / "skills" / "router-project-switch").mkdir(parents=True)
     (tmp_path / ".claude" / "knowledge").mkdir(parents=True)
 
-    scripts_dir = tmp_path / "scripts"
-    scripts_dir.mkdir()
-    src_script = Path(__file__).resolve().parent.parent / "scripts" / "bmad-router.sh"
-    (scripts_dir / "bmad-router.sh").write_text(src_script.read_text())
-    (scripts_dir / "bmad-router.sh").chmod(0o755)
+    scripts_dir = tmp_path / SCRIPT_REL.parent
+    scripts_dir.mkdir(parents=True)
+    src_script = (
+        Path(__file__).resolve().parent.parent
+        / "skills" / "meta-router" / "scripts" / "meta-router.sh"
+    )
+    (tmp_path / SCRIPT_REL).write_text(src_script.read_text())
+    (tmp_path / SCRIPT_REL).chmod(0o755)
     (tmp_path / "AGENTS.md").write_text("# Test metarepo\n")
 
     return tmp_path
@@ -43,7 +46,7 @@ def run(metarepo, *args, expect_fail=False, env=None):
     )
     if not expect_fail:
         assert result.returncode == 0, (
-            f"bmad-router {' '.join(args)} failed (rc={result.returncode}):\n"
+            f"meta-router {' '.join(args)} failed (rc={result.returncode}):\n"
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
     return result
@@ -696,12 +699,15 @@ class TestCustomOutputFolder:
 
 class TestEdgeCases:
     def test_not_a_metarepo(self, tmp_path):
-        script = Path(__file__).resolve().parent.parent / "scripts" / "bmad-router.sh"
-        scripts_dir = tmp_path / "scripts"
-        scripts_dir.mkdir()
-        (scripts_dir / "bmad-router.sh").write_text(script.read_text())
+        script = (
+            Path(__file__).resolve().parent.parent
+            / "skills" / "meta-router" / "scripts" / "meta-router.sh"
+        )
+        scripts_dir = tmp_path / SCRIPT_REL.parent
+        scripts_dir.mkdir(parents=True)
+        (tmp_path / SCRIPT_REL).write_text(script.read_text())
         result = subprocess.run(
-            ["bash", str(scripts_dir / "bmad-router.sh"), "list"],
+            ["bash", str(tmp_path / SCRIPT_REL), "list"],
             cwd=tmp_path, capture_output=True, text=True,
         )
         assert result.returncode != 0

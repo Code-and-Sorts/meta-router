@@ -6,4 +6,4 @@ this placeholder exists only so the `example` branch shows the intended structur
 
 Populate it on a real checkout with:
 
-    bash scripts/bmad-router.sh clone
+    bash .claude/skills/meta-router/scripts/meta-router.sh clone

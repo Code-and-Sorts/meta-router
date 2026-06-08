@@ -23,4 +23,4 @@ labels: bug
 - OS:
 - bash version (`bash --version`):
 - Node.js version (`node --version`):
-- bmad-router commit / tag:
+- meta-router commit / tag:

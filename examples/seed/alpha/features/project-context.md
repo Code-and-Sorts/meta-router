@@ -5,7 +5,7 @@
 ## Project Overview
 
 - **Name**: Alpha
-- **Description**: A demo full-stack task tracker, used here to show how bmad-router
+- **Description**: A demo full-stack task tracker, used here to show how meta-router
   routes a single BMad core across multiple projects and how one story can span
   several source repos.
 - **Tech Stack**: React + TypeScript web app (`web` repo), Node + GraphQL API

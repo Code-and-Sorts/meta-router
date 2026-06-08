@@ -1,0 +1,25 @@
+# GitHub sync configuration for this project.
+# Used by the meta-router skill's bmad-issues.py and the sync-issues GitHub Action.
+
+# Optional: the GitHub repo where delivery issues (epics + stories) are
+# created. Defaults to the metarepo — set this only if you want a project's
+# issues to live next to its code instead. The planning checklist issue is
+# always created in the metarepo.
+# repo: owner/repo
+
+# GitHub Project (v2) board for this project. Filled in by the meta-router
+# skill's bmad-github-bootstrap.sh — leave null to sync issues without a
+# board. project_owner defaults to the owner of the issues repo.
+project: null
+project_owner: null
+
+# Labels applied to delivery issues by type (created automatically if
+# missing). The sync also applies bmad-delivery / bmad-planning labels, which
+# the board views filter on.
+labels:
+  feature: feature
+  epic: epic
+  story: story
+
+# Set false to skip the "Planning: <project>" checklist issue in the metarepo.
+planning: true

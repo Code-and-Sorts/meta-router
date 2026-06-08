@@ -1,19 +1,41 @@
 ---
-name: router-project-switch
+name: meta-router
 description: >
-  Switch the active BMad project context in a multi-project metarepo. Use this skill whenever the
-  user says "switch project", "switch to <project>", "bmad-router", "change project context",
-  "list projects", "which project", "active project", "current project", or references working on
-  a different project within the metarepo. Also trigger when a BMad workflow targets the wrong
-  project or a symlink is missing/broken. Manages five symlinks: output folder (features by
-  default), docs folder, source-repo clones (`repos/`), per-story worktrees (`implementation/`), and project-specific agent skills.
+  Set up and operate a multi-project BMad metarepo. Use this skill whenever the user wants to
+  create a metarepo (run setup.sh), switch the active BMad project, list projects, check or fix
+  symlinks, clone source repos, create per-story worktrees, or set up the GitHub Issues + Projects
+  sync (boards, labels, issue trees). Trigger phrases: "meta router", "meta-router", "switch
+  project", "switch to <project>", "change project context", "list projects", "which project",
+  "active project", "set up a metarepo", "bootstrap github projects", "sync issues". Also trigger
+  when a BMad workflow targets the wrong project or a symlink is missing/broken.
+license: MIT
 ---
 
-# router-project-switch
+# meta-router
 
-Manages multi-project context switching in a BMad metarepo by routing five
-symlinks to the active project: output folder, docs, source-repo clones
-(`repos/`), per-story worktrees (`implementation/`), and agent skills.
+Sets up and operates a BMad metarepo: one shared `_bmad/` core, several
+projects, one active at a time. Switching routes five symlinks to the active
+project (output folder, docs, source-repo clones `repos/`, per-story worktrees
+`implementation/`, and project skills). Optionally mirrors BMad artifacts to
+GitHub Issues + Projects.
+
+## Setting up a metarepo
+
+The setup script ships inside this skill:
+
+```bash
+bash <skill-dir>/scripts/setup.sh <target-dir>
+```
+
+(`<skill-dir>` is wherever this skill is installed, e.g.
+`~/.claude/skills/meta-router` or a clone's `skills/meta-router`.)
+
+Interactive prompts cover output/docs folder names, BMad skill level, agent
+tool (`claude-code` | `github-copilot` | `codex`), projects to create, and
+whether to enable GitHub sync. It then installs BMad and scaffolds the layout
+below. Non-interactive: set `BMAD_SETUP_NONINTERACTIVE=1` and answer via
+`BMAD_OUTPUT_FOLDER`, `BMAD_DOCS_FOLDER`, `BMAD_SETUP_SKILL_LEVEL`,
+`BMAD_SETUP_TOOL`, `BMAD_SETUP_PROJECTS`, `BMAD_SETUP_GITHUB_SYNC`.
 
 ## Architecture
 
@@ -27,7 +49,7 @@ metarepo/
 ├── active-project.txt
 ├── .claude/                            # Agent tool home — tool-specific dir (see below)
 │   ├── skills/
-│   │   ├── router-project-switch/      # Always-active skill (flat, not nested)
+│   │   ├── meta-router/                # This skill: SKILL.md + scripts/ + templates/
 │   │   └── project -> ...              # Per-project skills symlink
 │   └── knowledge/                      # Shared docs (all projects)
 │       └── shared-context.md           # Overall shared context (all projects)
@@ -75,6 +97,10 @@ An unrecognized tool falls back to the tool-agnostic `.agents/` home.
 
 ## Commands
 
+The scripts ship inside this skill. All run from the metarepo root:
+`bash <tool-home>/skills/meta-router/scripts/meta-router.sh <command>`
+(`<tool-home>` is `.claude`, `.github`, or `.codex` — see Config Resolution).
+
 | Command | Description |
 |---|---|
 | `switch <name>` | Switch all five symlinks to the named project |
@@ -95,7 +121,7 @@ Skills live in the active agent tool's skills directory (`.claude/skills/` for
 Claude Code by default — see Config Resolution). Each project can have its own
 agent skills at `projects/<name>/<skills-dir>/`. When the router switches to a
 project, `<skills-dir>/project` symlinks to that project's skills directory.
-Always-active skills (like `router-project-switch`) live directly at
+Always-active skills (like `meta-router`) live directly at
 `<skills-dir>/<name>/` and are available regardless of the active project.
 
 ## Shared Knowledge
@@ -125,12 +151,38 @@ This is wired through BMad's customization at `_bmad/custom/bmad-dev-story.toml`
 section to each story, and the Dev agent reads it to create the right worktrees
 before implementing. See `_bmad/custom/worktree-workflow.md`.
 
+## GitHub Issues + Projects sync
+
+Optional. Mirrors each project's BMad artifacts to a private GitHub Project
+board and two label-separated issue trees (`bmad-delivery`: Feature → Epic →
+Story sub-issues driven by `sprint-status.yaml` and the PRDs; `bmad-planning`:
+one planning checklist issue per project). Setup, per project, in a metarepo
+pushed to GitHub:
+
+1. `bash <tool-home>/skills/meta-router/scripts/bmad-github-bootstrap.sh <project>`
+   creates the private board, labels, and issue types (first run can save an
+   org-level view template so later boards copy their views).
+2. Add a `BMAD_PROJECT_TOKEN` secret: PAT with Projects read/write, Issues
+   read/write, Pull requests read. The default `GITHUB_TOKEN` cannot access
+   Projects v2.
+3. Install the skill's `templates/.github/workflows/bmad-pr-ping.yml` into each
+   source repo so story PRs update the board immediately.
+
+Run the sync locally with
+`python <tool-home>/skills/meta-router/scripts/bmad-issues.py sync --dry-run`
+(`--all` for every configured project; needs `gh` authenticated). The sync is
+the single writer of issue state: BMad statuses map to Backlog / Ready /
+In Progress / In Review / Done, an open PR on a `story/<key>` branch forces
+In Review, and re-runs are idempotent (hidden `<!-- bmad-sync -->` markers).
+
 ## Behavior Rules
 
 1. Before any BMad workflow, verify the output symlink points to the right project.
 2. When the user mentions a different project by name, ask before switching.
 3. Never delete project artifacts — `switch` only changes symlinks.
-4. Must be run from the metarepo root (detected by `_bmad/` directory).
+4. Router commands must run from the metarepo root (detected by `_bmad/` directory).
 5. Before implementing a story, create its worktrees with `worktree <story-id>`
    for the repos in its `## Affected Repos` section; implement inside those
    worktrees, never directly in `repos/`.
+6. When running the issue sync, prefer `--dry-run` first and show the user what
+   would change before a real run.

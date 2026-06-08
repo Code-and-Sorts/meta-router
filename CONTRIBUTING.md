@@ -1,4 +1,4 @@
-# Contributing to bmad-router
+# Contributing to Meta Router
 
 ## Prerequisites
 
@@ -19,17 +19,18 @@ pytest tests/ -v
 ## Linting
 
 ```bash
-shellcheck setup.sh scripts/bmad-router.sh
+shellcheck skills/meta-router/scripts/*.sh
+gh skill publish --dry-run
 ```
 
-Fix any warnings before opening a PR. The CI in `.github/workflows/ci.yml` runs both `pytest` and `shellcheck` on every push and pull request.
+Fix any warnings before opening a PR. The CI in `.github/workflows/ci.yml` runs `pytest`, `shellcheck`, and the `gh skill` format validation on every push and pull request.
 
 ## Pull request expectations
 
 - Tests pass (`pytest tests/ -v`) and shellcheck is clean.
 - Keep changes focused — one concern per PR.
-- If you add a new `bmad-router.sh` command, update the Commands table in `README.md`.
-- If you change setup behaviour, verify the non-interactive path still works (see the `BMAD_SETUP_NONINTERACTIVE` env vars documented in `README.md`).
+- If you add a new `meta-router.sh` command, update the Commands table in `docs/reference.md`.
+- If you change setup behaviour, verify the non-interactive path still works (see the `BMAD_SETUP_NONINTERACTIVE` env vars documented in `docs/reference.md`).
 
 ## Reporting issues
 

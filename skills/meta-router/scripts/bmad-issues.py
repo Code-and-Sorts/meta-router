@@ -243,11 +243,13 @@ def load_sync_config(project_dir, metarepo_slug):
     if config is None:
         return None
     repo = str(config.get("repo") or "")
-    if not repo or repo.startswith("OWNER/"):
+    explicit = bool(repo) and not repo.startswith("OWNER/")
+    if not explicit:
         repo = metarepo_slug or ""
     if not repo:
         return None
     config["repo"] = repo
+    config["repo_explicit"] = explicit
     config.setdefault("labels", {})
     config["labels"].setdefault("feature", "feature")
     config["labels"].setdefault("epic", "epic")
@@ -264,15 +266,17 @@ def repo_slug_from_url(url):
 
 
 def load_source_repos(project_dir, config):
-    """Every repo where story branches can live: repos.yaml clones + the
-    configured issues repo."""
+    """Every repo where this project's story branches can live: the repos.yaml
+    clones, plus the issues repo only when it was set explicitly. A defaulted
+    issues repo is the shared metarepo — story branches never live there, and
+    scanning it would cross-match other projects' story/<key> branches."""
     slugs = []
     repos_config = read_yaml_file(project_dir / "repos.yaml")
     for entry in (repos_config or {}).get("repos", []) or []:
         slug = repo_slug_from_url(entry.get("url", ""))
         if slug:
             slugs.append(slug)
-    if config["repo"] not in slugs:
+    if config.get("repo_explicit") and config["repo"] not in slugs:
         slugs.append(config["repo"])
     return slugs
 
@@ -383,12 +387,30 @@ def parse_frontmatter(text):
         return {}
 
 
+PRD_DATE_RE = re.compile(r"-(\d{4})-?(\d{2})-?(\d{2})$")
+
+
+def prd_sort_key(folder_name):
+    """Order PRD run folders by their trailing date (prd-<name>-<date>), not
+    alphabetically — otherwise the PRD's name outranks its date and the wrong
+    PRD becomes current. Undated folders sort first; the folder name breaks
+    ties deterministically (mtime is clone time in CI, so it can't)."""
+    match = PRD_DATE_RE.search(folder_name)
+    date = "-".join(match.groups()) if match else ""
+    return (bool(match), date, folder_name)
+
+
 def find_prds(planning_dir):
     """Each PRD is a Feature. BMad v6 writes one run folder per PRD
-    (prds/prd-<name>-<date>/prd.md); the newest folder (run folders sort by
-    their date suffix) is the current feature — epics.md is generated from it,
-    so its epics nest under that feature issue."""
-    prd_paths = sorted(planning_dir.glob("prds/*/prd.md")) if planning_dir.is_dir() else []
+    (prds/prd-<name>-<date>/prd.md); the folder with the newest date suffix
+    is the current feature — epics.md is generated from it, so its epics nest
+    under that feature issue."""
+    prd_paths = []
+    if planning_dir.is_dir():
+        prd_paths = sorted(
+            planning_dir.glob("prds/*/prd.md"),
+            key=lambda p: prd_sort_key(p.parent.name),
+        )
     if not prd_paths and planning_dir.is_dir():
         prd_paths = sorted(
             p for p in planning_dir.iterdir()
@@ -530,9 +552,15 @@ def build_pr_section(prs):
 
 
 def list_open_planning_prs(metarepo_slug, project_name, limit=20):
-    pulls = gh_rest_paginated(f"repos/{metarepo_slug}/pulls?state=open&per_page=100")
+    """First open PR touching the project's planning artifacts, checking the
+    `limit` most recently updated PRs (one bounded list call, not a full
+    pagination)."""
+    pulls = gh_rest(
+        f"repos/{metarepo_slug}/pulls?state=open&sort=updated&direction=desc&per_page={limit}",
+        check=False,
+    ) or []
     prefix = f"projects/{project_name}/"
-    for pull in pulls[:limit]:
+    for pull in pulls:
         files = gh_rest(
             f"repos/{metarepo_slug}/pulls/{pull['number']}/files?per_page=100",
             check=False,
@@ -834,6 +862,10 @@ def sync_delivery(project_name, project_dir, config, board, dry_run):
 
     existing = list_synced_issues(repo, DELIVERY_LABEL, project_name)
     prs_by_key = list_story_branch_prs(load_source_repos(project_dir, config))
+    # Shared source repos can carry other projects' story branches — only
+    # this project's story keys matter here.
+    story_keys = {story["key"] for story in stories}
+    prs_by_key = {key: prs for key, prs in prs_by_key.items() if key in story_keys}
     open_pr_keys = keys_with_open_prs(prs_by_key)
 
     root = upsert_issue(
@@ -970,12 +1002,22 @@ def sync_feature_states(repo, prds, feature_issues, stories, board, dry_run):
 
 def close_completed_epics(repo, epics, stories, epic_issues, board, dry_run):
     """Epic issues close when every story under them is done. Never reopened
-    from the epic key's status (epic→done is manual in BMad)."""
+    from the epic key's status (epic→done is manual in BMad). An epic with no
+    stories yet takes its board status from its own sprint status."""
     for epic_num, issue in epic_issues.items():
         if not issue:
             continue
         epic_stories = [s for s in stories if s["epic"] == epic_num]
         if not epic_stories:
+            own_status = epics[epic_num]["status"]
+            if own_status == "done":
+                set_issue_state(repo, issue, should_close=True, dry_run=dry_run)
+                board.set_status(repo, issue["number"], issue["node_id"], "Done")
+            else:
+                board.set_status(
+                    repo, issue["number"], issue["node_id"],
+                    SPRINT_TO_PROJECT_STATUS.get(own_status, "Backlog"),
+                )
             continue
         if all(s["status"] == "done" for s in epic_stories):
             set_issue_state(repo, issue, should_close=True, dry_run=dry_run)

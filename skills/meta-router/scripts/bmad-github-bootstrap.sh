@@ -492,14 +492,12 @@ set_status_options() {
     return 0
   fi
 
-  # Reuse the existing option ID when a name already matches (e.g. the default
-  # "In Progress"/"Done") so item values and built-in workflow references
-  # survive the update — only genuinely new options get new IDs.
-  local options_literal="" entry option_name color description option_id
+  # The option input type has no id field — the full list is re-sent by name,
+  # and GitHub preserves item values and built-in workflow references for
+  # options whose names already match (e.g. the default "In Progress"/"Done").
+  local options_literal="" entry option_name color description
   while IFS='|' read -r option_name color description; do
-    option_id="$(jq -r --arg n "$option_name" '[.[] | select(.name == $n)][0].id // empty' <<< "$current_json" 2>/dev/null || true)"
     entry="{name: \"$option_name\", color: $color, description: \"$description\"}"
-    [[ -n "$option_id" ]] && entry="{id: \"$option_id\", name: \"$option_name\", color: $color, description: \"$description\"}"
     options_literal+="${options_literal:+, }$entry"
   done <<'OPTS'
 Backlog|GRAY|Defined, not started
@@ -562,8 +560,8 @@ print_view_checklist() {
   echo -e "    │ Everything else      │ Leave off — the sync covers it                     │"
   echo -e "    └──────────────────────┴────────────────────────────────────────────────────┘"
   echo ""
-  echo -e "    ${DIM}Red icons mean a workflow points at a removed Status option (name-matched"
-  echo -e "    options like Done keep their IDs, so most survive). To repair one: click"
+  echo -e "    ${DIM}Red icons mean a workflow points at a removed Status option (options whose"
+  echo -e "    names survive the update usually keep working). To repair one: click"
   echo -e "    it → Edit → reselect the Status value → Save and turn on.${NC}"
   echo -e "  ${DIM}(Label filters work for issues in any org or personal account —"
   echo -e "  org-only issue types stay as extra metadata where available.)${NC}"
@@ -602,6 +600,8 @@ ensure_project_field() {
   local options_literal="" name
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
+    name="${name//\\/\\\\}"
+    name="${name//\"/\\\"}"
     options_literal+="${options_literal:+, }{name: \"$name\", color: GRAY, description: \"\"}"
   done < <(list_project_names)
   # The API rejects an empty option list — seed a placeholder until the

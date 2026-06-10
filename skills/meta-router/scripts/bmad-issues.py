@@ -105,7 +105,10 @@ CREATE_THROTTLE_SECONDS = float(os.environ.get("BMAD_SYNC_THROTTLE", "1.0"))
 WRITE_THROTTLE_SECONDS = float(os.environ.get("BMAD_SYNC_WRITE_THROTTLE", "0.25"))
 RETRY_LIMIT = int(os.environ.get("BMAD_SYNC_RETRIES", "3"))
 RETRY_BACKOFF_SECONDS = (10, 30, 60)
-RATE_LIMIT_RE = re.compile(r"HTTP 403|HTTP 429|rate limit|secondary rate", re.IGNORECASE)
+# Plain HTTP 403s are everyday permission failures here (inaccessible repos,
+# restricted org APIs) and must fail fast — rate-limited 403s carry "rate
+# limit" text, which this matches.
+RATE_LIMIT_RE = re.compile(r"HTTP 429|rate limit|secondary rate", re.IGNORECASE)
 
 
 def die(msg):
@@ -658,7 +661,8 @@ query($projectId: ID!, $cursor: String) {
 
 
 def graphql_escape(value):
-    return str(value).replace("\\", "\\\\").replace('"', '\\"')
+    value = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return value.replace("\r", "\\r").replace("\n", "\\n")
 
 
 class ProjectBoard:
@@ -814,9 +818,10 @@ class ProjectBoard:
 
     def ensure_option(self, field_name, option_name, color="GRAY", description=""):
         """Append a single-select option if missing. The update mutation
-        replaces the whole option list, so existing options are re-sent with
-        their ids — name-matched ids keep item values and workflow references
-        alive (same pattern as the bootstrap's set_status_options)."""
+        replaces the whole option list, so existing options are re-sent by
+        name/color/description — GitHub preserves item values for re-sent
+        names (the option input type has no id field), and the regenerated
+        ids come back in the mutation response."""
         if not self.project_id:
             return False
         field = self.fields.get(field_name)
@@ -833,7 +838,7 @@ class ProjectBoard:
             return True
 
         entries = [
-            f'{{id: "{opt["id"]}", name: "{graphql_escape(name)}", '
+            f'{{name: "{graphql_escape(name)}", '
             f'color: {opt["color"]}, description: "{graphql_escape(opt["description"])}"}}'
             for name, opt in field["options"].items()
         ]
@@ -851,10 +856,8 @@ class ProjectBoard:
             """,
             check=False, fieldId=field["id"],
         )
-        options = (
-            (data or {}).get("data", {}).get("updateProjectV2Field", {})
-            or {}
-        ).get("projectV2Field", {}).get("options")
+        payload = (data or {}).get("data", {}).get("updateProjectV2Field") or {}
+        options = (payload.get("projectV2Field") or {}).get("options")
         if not options:
             warn(f"Could not add option '{option_name}' to the '{field_name}' field")
             return False
@@ -1205,7 +1208,7 @@ def close_completed_epics(repo, epics, stories, epic_issues, board, dry_run):
             if own_status == "done":
                 set_issue_state(repo, issue, should_close=True, dry_run=dry_run)
                 board.set_status(repo, issue["number"], issue["node_id"], "Done")
-            else:
+            elif str(issue.get("state")).lower() == "open":
                 board.set_status(
                     repo, issue["number"], issue["node_id"],
                     SPRINT_TO_PROJECT_STATUS.get(own_status, "Backlog"),

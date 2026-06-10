@@ -25,7 +25,7 @@ def completed(stdout="", returncode=0, stderr=""):
 
 
 FIELD_VALUE_RE = re.compile(r'(?:(\w+):\s*)?fieldValueByName\(name: "([^"]+)"\)')
-OPTION_NAME_RE = re.compile(r'\{(?:id: "([^"]*)", )?name: "([^"]+)"')
+OPTION_NAME_RE = re.compile(r'\{name: "([^"]+)"')
 
 
 class FakeGh:
@@ -269,9 +269,17 @@ class FakeGh:
             return completed(json.dumps({"data": {"updateProjectV2ItemFieldValue": {}}}))
 
         if "updateProjectV2Field" in query:
+            # Real GitHub: ProjectV2SingleSelectFieldOptionInput accepts only
+            # name/color/description — an id field fails the whole mutation.
+            if re.search(r'singleSelectOptions:\s*\[[^\]]*\bid:', query):
+                return completed(
+                    stderr='GraphQL: Argument "input" has invalid value: '
+                           'Field "id" is not defined by type "ProjectV2SingleSelectFieldOptionInput"',
+                    returncode=1,
+                )
             board, field = self._field_by_id(variables["fieldId"])
             new_options = {}
-            for opt_id, name in OPTION_NAME_RE.findall(query):
+            for name in OPTION_NAME_RE.findall(query):
                 existing = field["options"].get(name)
                 new_options[name] = existing or {
                     "id": f"OPT_NEW_{len(new_options)}", "color": "GRAY", "description": "",
@@ -357,6 +365,21 @@ class TestRetry:
         def fake_run(cmd, **kwargs):
             calls.append(cmd)
             return completed(stderr="HTTP 404: Not Found", returncode=1)
+
+        monkeypatch.setattr(bmad_issues.subprocess, "run", fake_run)
+        monkeypatch.setattr(bmad_issues.time, "sleep", lambda seconds: None)
+        result = bmad_issues.run_gh("api", "repos/o/r", check=False)
+        assert result.returncode == 1
+        assert len(calls) == 1
+
+    def test_permission_403_fails_fast(self, monkeypatch):
+        # Plain 403s are everyday permission failures (inaccessible repo,
+        # restricted org API) — they must not eat the retry backoff.
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return completed(stderr="HTTP 403: Resource not accessible by personal access token", returncode=1)
 
         monkeypatch.setattr(bmad_issues.subprocess, "run", fake_run)
         monkeypatch.setattr(bmad_issues.time, "sleep", lambda seconds: None)
@@ -542,17 +565,18 @@ class TestProjectBoard:
 
 
 class TestEnsureOption:
-    def test_appends_option_preserving_existing_ids(self, fake):
+    def test_appends_option_resending_existing_by_name(self, fake):
+        # FakeGh rejects any payload carrying option ids (like real GitHub),
+        # so success here proves existing options are re-sent by name only.
         board_state = fake.add_board(owner="org", number=9, fields={"Project": ["alpha"]})
-        alpha_id = board_state["fields"]["Project"]["options"]["alpha"]["id"]
         board = bmad_issues.ProjectBoard("org", 9, dry_run=False)
         assert board.ensure_option("Project", "beta") is True
         options = board_state["fields"]["Project"]["options"]
         assert sorted(options) == ["alpha", "beta"]
-        assert options["alpha"]["id"] == alpha_id  # existing id re-sent, not replaced
-        # the mutation payload re-sent alpha with its id
         kind, (field_id, names) = [w for w in fake.writes if w[0] == "field-options"][0]
         assert names == ["alpha", "beta"]
+        # cached ids are refreshed from the mutation response
+        assert all(board.fields["Project"]["options"][n]["id"] for n in ("alpha", "beta"))
 
     def test_existing_option_is_a_noop(self, fake):
         fake.add_board(owner="org", number=9, fields={"Project": ["alpha"]})
@@ -691,6 +715,24 @@ class TestSyncEndToEnd:
         bmad_issues.sync_project("alpha", dry_run=True)
         assert fake.writes == []
 
+    def test_manually_closed_zero_story_epic_left_alone(self, fake, metarepo):
+        bmad_issues.sync_project("alpha", dry_run=False)
+        by_title = {i["title"]: i for i in fake.issues["org/meta"].values()}
+        epic2 = by_title["Epic 2: Future"]
+        epic2["state"] = "closed"
+        sprint = (
+            metarepo / "projects" / "alpha" / "features"
+            / "implementation-artifacts" / "sprint-status.yaml"
+        )
+        sprint.write_text(SPRINT_YAML.replace("epic-2: backlog", "epic-2: in-progress"))
+        bmad_issues.sync_project("alpha", dry_run=False)
+        board = fake.boards[("org", 7)]
+        values = next(
+            i["values"] for i in board["items"].values() if i["number"] == epic2["number"]
+        )
+        # A closed issue's board row is not rewritten from the epic's status.
+        assert values == {"Status": "Backlog"}
+
 
 @pytest.fixture
 def portfolio_metarepo(fake, metarepo):
@@ -698,9 +740,11 @@ def portfolio_metarepo(fake, metarepo):
     (metarepo / "github-sync.yaml").write_text(
         "project_owner: org\nportfolio: 9\nportfolio_owner: org\n"
     )
+    # The bootstrap always seeds the Project field with at least one option
+    # (real GitHub rejects empty option lists), so model that state.
     fake.add_board(owner="org", number=9, fields={
         "Status": ["Backlog", "Ready", "In Progress", "In Review", "Done"],
-        "Project": [],
+        "Project": ["unassigned"],
     })
     return metarepo
 
@@ -731,7 +775,7 @@ class TestPortfolioBoard:
         bmad_issues.sync_project("alpha", dry_run=False)
         option_writes = [w for w in fake.writes if w[0] == "field-options"]
         assert len(option_writes) == 1
-        assert option_writes[0][1][1] == ["alpha"]
+        assert option_writes[0][1][1] == ["alpha", "unassigned"]
         fake.writes.clear()
         bmad_issues.sync_project("alpha", dry_run=False)
         assert [w for w in fake.writes if w[0] == "field-options"] == []

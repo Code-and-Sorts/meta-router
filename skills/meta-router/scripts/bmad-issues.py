@@ -611,7 +611,7 @@ query($owner: String!, $number: Int!) {
       id
       fields(first: 50) {
         nodes {
-          ... on ProjectV2SingleSelectField { id name options { id name } }
+          ... on ProjectV2SingleSelectField { id name options { id name color description } }
         }
       }
     }
@@ -620,6 +620,8 @@ query($owner: String!, $number: Int!) {
 """
 
 PROJECT_QUERY_USER = PROJECT_QUERY.replace("organization", "user")
+
+PROJECT_FIELD = "Project"  # single-select on the portfolio board, one option per project
 
 PROJECT_ITEMS_QUERY = """
 query($projectId: ID!, $cursor: String) {
@@ -630,7 +632,10 @@ query($projectId: ID!, $cursor: String) {
         nodes {
           id
           content { ... on Issue { number repository { nameWithOwner } } }
-          fieldValueByName(name: "Status") {
+          status: fieldValueByName(name: "Status") {
+            ... on ProjectV2ItemFieldSingleSelectValue { name }
+          }
+          project: fieldValueByName(name: "%s") {
             ... on ProjectV2ItemFieldSingleSelectValue { name }
           }
         }
@@ -638,19 +643,24 @@ query($projectId: ID!, $cursor: String) {
     }
   }
 }
-"""
+""" % PROJECT_FIELD
+
+
+def graphql_escape(value):
+    return str(value).replace("\\", "\\\\").replace('"', '\\"')
 
 
 class ProjectBoard:
     """Runtime handle on one GitHub Project: IDs looked up fresh each run,
-    current item statuses prefetched so unchanged items cost zero writes."""
+    current item field values prefetched so unchanged items cost zero writes.
+    Manages single-select fields — Status everywhere, plus the Project field
+    on the portfolio board."""
 
     def __init__(self, owner, number, dry_run):
         self.dry_run = dry_run
         self.project_id = None
-        self.status_field_id = None
-        self.status_options = {}
-        self.items = {}
+        self.fields = {}  # name -> {"id", "options": {name: {"id","color","description"}}}
+        self.items = {}   # (repo, issue number) -> {"item_id", "values": {field: option}}
 
         data = gh_graphql(PROJECT_QUERY, check=False, owner=owner, number=int(number))
         container = (data or {}).get("data", {}).get("organization")
@@ -667,12 +677,35 @@ class ProjectBoard:
 
         self.project_id = project["id"]
         for field in project["fields"]["nodes"]:
-            if field and field.get("name") == "Status":
-                self.status_field_id = field["id"]
-                self.status_options = {
-                    option["name"]: option["id"] for option in field["options"]
-                }
+            if not field or not field.get("name"):
+                continue
+            self.fields[field["name"]] = {
+                "id": field["id"],
+                "options": {
+                    option["name"]: {
+                        "id": option["id"],
+                        "color": option.get("color") or "GRAY",
+                        "description": option.get("description") or "",
+                    }
+                    for option in field["options"]
+                },
+            }
         self._fetch_items()
+
+    @classmethod
+    def null(cls, dry_run):
+        """A board handle that ignores every write — used when no board is
+        configured so call sites never need a None check."""
+        board = cls.__new__(cls)
+        board.dry_run = dry_run
+        board.project_id = None
+        board.fields = {}
+        board.items = {}
+        return board
+
+    @property
+    def status_options(self):
+        return self.fields.get("Status", {}).get("options", {})
 
     def _fetch_items(self):
         cursor = ""
@@ -686,10 +719,14 @@ class ProjectBoard:
                 content = node.get("content") or {}
                 if content.get("number"):
                     repo = content["repository"]["nameWithOwner"]
-                    status = (node.get("fieldValueByName") or {}).get("name")
+                    values = {}
+                    for field_name, alias in (("Status", "status"), (PROJECT_FIELD, "project")):
+                        value = (node.get(alias) or {}).get("name")
+                        if value:
+                            values[field_name] = value
                     self.items[(repo, content["number"])] = {
                         "item_id": node["id"],
-                        "status": status,
+                        "values": values,
                     }
             page = items.get("pageInfo", {})
             if not page.get("hasNextPage"):
@@ -697,21 +734,32 @@ class ProjectBoard:
             cursor = page["endCursor"]
 
     def set_status(self, repo, issue_number, issue_node_id, status_name):
+        self.set_single_select(repo, issue_number, issue_node_id, "Status", status_name)
+
+    def set_single_select(self, repo, issue_number, issue_node_id, field_name, option_name):
         if not self.project_id:
             return
-        if status_name not in self.status_options:
+        field = self.fields.get(field_name)
+        if not field:
+            warn(f"Project has no '{field_name}' field — skipping that update")
+            return
+        if option_name not in field["options"]:
+            hint = (
+                " (expected: Backlog, Ready, In Progress, In Review, Done)"
+                if field_name == "Status" else ""
+            )
             warn(
-                f"Project has no Status option '{status_name}' — add it in the "
-                f"project settings (expected: Backlog, Ready, In Progress, In Review, Done)"
+                f"Project field '{field_name}' has no option '{option_name}' — "
+                f"add it in the project settings{hint}"
             )
             return
 
         item = self.items.get((repo, issue_number))
-        if item and item["status"] == status_name:
+        if item and item["values"].get(field_name) == option_name:
             return
 
         if self.dry_run:
-            info(f"[dry-run] Would set #{issue_number} → {status_name} on the board")
+            info(f"[dry-run] Would set #{issue_number} {field_name} → {option_name} on the board")
             return
 
         if not item:
@@ -734,7 +782,7 @@ class ProjectBoard:
             if not item_id:
                 warn(f"Could not add #{issue_number} to the project")
                 return
-            item = {"item_id": item_id, "status": None}
+            item = {"item_id": item_id, "values": {}}
             self.items[(repo, issue_number)] = item
 
         gh_graphql(
@@ -748,10 +796,64 @@ class ProjectBoard:
             """,
             check=False,
             projectId=self.project_id, itemId=item["item_id"],
-            fieldId=self.status_field_id,
-            optionId=self.status_options[status_name],
+            fieldId=field["id"],
+            optionId=field["options"][option_name]["id"],
         )
-        item["status"] = status_name
+        item["values"][field_name] = option_name
+
+    def ensure_option(self, field_name, option_name, color="GRAY", description=""):
+        """Append a single-select option if missing. The update mutation
+        replaces the whole option list, so existing options are re-sent with
+        their ids — name-matched ids keep item values and workflow references
+        alive (same pattern as the bootstrap's set_status_options)."""
+        if not self.project_id:
+            return False
+        field = self.fields.get(field_name)
+        if not field:
+            return False
+        if option_name in field["options"]:
+            return True
+        if len(field["options"]) >= 50:
+            warn(f"Field '{field_name}' is at GitHub's 50-option cap — cannot add '{option_name}'")
+            return False
+        if self.dry_run:
+            info(f"[dry-run] Would add option '{option_name}' to the '{field_name}' field")
+            field["options"][option_name] = {"id": None, "color": color, "description": description}
+            return True
+
+        entries = [
+            f'{{id: "{opt["id"]}", name: "{graphql_escape(name)}", '
+            f'color: {opt["color"]}, description: "{graphql_escape(opt["description"])}"}}'
+            for name, opt in field["options"].items()
+        ]
+        entries.append(
+            f'{{name: "{graphql_escape(option_name)}", color: {color}, '
+            f'description: "{graphql_escape(description)}"}}'
+        )
+        data = gh_graphql(
+            f"""
+            mutation($fieldId: ID!) {{
+              updateProjectV2Field(input: {{fieldId: $fieldId, singleSelectOptions: [{", ".join(entries)}]}}) {{
+                projectV2Field {{ ... on ProjectV2SingleSelectField {{ id options {{ id name }} }} }}
+              }}
+            }}
+            """,
+            check=False, fieldId=field["id"],
+        )
+        options = (
+            (data or {}).get("data", {}).get("updateProjectV2Field", {})
+            or {}
+        ).get("projectV2Field", {}).get("options")
+        if not options:
+            warn(f"Could not add option '{option_name}' to the '{field_name}' field")
+            return False
+        for option in options:
+            entry = field["options"].setdefault(
+                option["name"], {"color": color, "description": description}
+            )
+            entry["id"] = option["id"]
+        ok(f"Added '{option_name}' to the board's {field_name} field")
+        return True
 
 
 # ── Issue upsert ─────────────────────────────────────────────────────────────
@@ -1149,10 +1251,7 @@ def sync_project(project_name, dry_run):
             "No GitHub Project configured — issues sync without a board. "
             f"Run the skill's bmad-github-bootstrap.sh {project_name}"
         )
-        board = ProjectBoard.__new__(ProjectBoard)
-        board.dry_run = dry_run
-        board.project_id = None
-        board.items = {}
+        board = ProjectBoard.null(dry_run)
     else:
         board = ProjectBoard(config["project_owner"], config["project"], dry_run)
 

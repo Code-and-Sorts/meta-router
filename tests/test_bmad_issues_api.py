@@ -452,10 +452,7 @@ class TestCloseOrphans:
         issue = fake.add_issue(
             "o/meta", "Old", bmad_issues.build_marker("1-9-old", "alpha"), ["bmad-delivery"]
         )
-        board = bmad_issues.ProjectBoard.__new__(bmad_issues.ProjectBoard)
-        board.dry_run = False
-        board.project_id = None
-        board.items = {}
+        board = bmad_issues.ProjectBoard.null(dry_run=False)
         bmad_issues.close_orphans(
             "o/meta", {"1-9-old": issue}, prds=[], epics={}, stories=[],
             project_name="alpha", dry_run=False, board=board,
@@ -469,10 +466,7 @@ class TestCloseOrphans:
             "o/meta", "Old", bmad_issues.build_marker("1-9-old", "alpha"),
             ["bmad-delivery", "bmad-orphaned"], state="closed",
         )
-        board = bmad_issues.ProjectBoard.__new__(bmad_issues.ProjectBoard)
-        board.dry_run = False
-        board.project_id = None
-        board.items = {}
+        board = bmad_issues.ProjectBoard.null(dry_run=False)
         bmad_issues.close_orphans(
             "o/meta", {"1-9-old": issue}, prds=[], epics={}, stories=[],
             project_name="alpha", dry_run=False, board=board,
@@ -526,6 +520,55 @@ class TestProjectBoard:
         issue = fake.add_issue("o/meta", "S", "", ["bmad-delivery"])
         board = bmad_issues.ProjectBoard("org", 7, dry_run=False)
         board.set_status("o/meta", issue["number"], issue["node_id"], "In Review")
+        assert fake.writes == []
+
+    def test_set_single_select_writes_other_fields(self, fake):
+        fake.add_board(owner="org", number=9, fields={
+            "Status": ["Backlog", "Done"], "Project": ["alpha", "beta"],
+        })
+        issue = fake.add_issue("o/meta", "S", "", ["bmad-delivery"])
+        board = bmad_issues.ProjectBoard("org", 9, dry_run=False)
+        board.set_single_select("o/meta", issue["number"], issue["node_id"], "Project", "alpha")
+        board_state = fake.boards[("org", 9)]
+        values = [i["values"] for i in board_state["items"].values()]
+        assert values == [{"Project": "alpha"}]
+
+    def test_missing_field_warns_without_write(self, fake):
+        fake.add_board(owner="org", number=7)  # no Project field
+        issue = fake.add_issue("o/meta", "S", "", ["bmad-delivery"])
+        board = bmad_issues.ProjectBoard("org", 7, dry_run=False)
+        board.set_single_select("o/meta", issue["number"], issue["node_id"], "Project", "alpha")
+        assert fake.writes == []
+
+
+class TestEnsureOption:
+    def test_appends_option_preserving_existing_ids(self, fake):
+        board_state = fake.add_board(owner="org", number=9, fields={"Project": ["alpha"]})
+        alpha_id = board_state["fields"]["Project"]["options"]["alpha"]["id"]
+        board = bmad_issues.ProjectBoard("org", 9, dry_run=False)
+        assert board.ensure_option("Project", "beta") is True
+        options = board_state["fields"]["Project"]["options"]
+        assert sorted(options) == ["alpha", "beta"]
+        assert options["alpha"]["id"] == alpha_id  # existing id re-sent, not replaced
+        # the mutation payload re-sent alpha with its id
+        kind, (field_id, names) = [w for w in fake.writes if w[0] == "field-options"][0]
+        assert names == ["alpha", "beta"]
+
+    def test_existing_option_is_a_noop(self, fake):
+        fake.add_board(owner="org", number=9, fields={"Project": ["alpha"]})
+        board = bmad_issues.ProjectBoard("org", 9, dry_run=False)
+        assert board.ensure_option("Project", "alpha") is True
+        assert fake.writes == []
+
+    def test_missing_field_returns_false(self, fake):
+        fake.add_board(owner="org", number=9)
+        board = bmad_issues.ProjectBoard("org", 9, dry_run=False)
+        assert board.ensure_option("Project", "alpha") is False
+
+    def test_dry_run_updates_cache_only(self, fake):
+        fake.add_board(owner="org", number=9, fields={"Project": ["alpha"]})
+        board = bmad_issues.ProjectBoard("org", 9, dry_run=True)
+        assert board.ensure_option("Project", "beta") is True
         assert fake.writes == []
 
 

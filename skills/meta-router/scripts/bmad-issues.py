@@ -13,6 +13,11 @@ GitHub as two label-separated issue trees, then updates a GitHub Project board:
       one "Planning: <project>" issue whose checklist tracks which planning
       artifacts (brief, PRD, UX, architecture, epics) exist.
 
+When the metarepo-root github-sync.yaml has a portfolio: board number (see
+bmad-github-bootstrap.sh --portfolio), every issue is additionally placed on
+that org-wide board with the same Status plus a Project single-select option
+naming its project — one aggregated view across all projects.
+
 Design rules (see review that shaped them):
   - This script is the ONLY writer of issue state and Project Status. "In
     Review" is derived here from open story/<key> PRs across the project's
@@ -97,6 +102,13 @@ PLANNING_DOCS = [
 ]
 
 CREATE_THROTTLE_SECONDS = float(os.environ.get("BMAD_SYNC_THROTTLE", "1.0"))
+WRITE_THROTTLE_SECONDS = float(os.environ.get("BMAD_SYNC_WRITE_THROTTLE", "0.25"))
+RETRY_LIMIT = int(os.environ.get("BMAD_SYNC_RETRIES", "3"))
+RETRY_BACKOFF_SECONDS = (10, 30, 60)
+# Plain HTTP 403s are everyday permission failures here (inaccessible repos,
+# restricted org APIs) and must fail fast — rate-limited 403s carry "rate
+# limit" text, which this matches.
+RATE_LIMIT_RE = re.compile(r"HTTP 429|rate limit|secondary rate", re.IGNORECASE)
 
 
 def die(msg):
@@ -120,18 +132,43 @@ def warn(msg):
 
 
 def run_gh(*args, check=True, input_text=None):
-    try:
-        result = subprocess.run(
-            ["gh", *args], capture_output=True, text=True, input=input_text
-        )
-    except FileNotFoundError:
-        die("gh CLI not found — install it from https://cli.github.com and run: gh auth login")
+    for attempt in range(RETRY_LIMIT + 1):
+        try:
+            result = subprocess.run(
+                ["gh", *args], capture_output=True, text=True, input=input_text
+            )
+        except FileNotFoundError:
+            die("gh CLI not found — install it from https://cli.github.com and run: gh auth login")
+        if result.returncode == 0 or attempt == RETRY_LIMIT:
+            break
+        if not RATE_LIMIT_RE.search(result.stderr or ""):
+            break
+        backoff = RETRY_BACKOFF_SECONDS[min(attempt, len(RETRY_BACKOFF_SECONDS) - 1)]
+        warn(f"GitHub rate limited — retrying in {backoff}s ({attempt + 1}/{RETRY_LIMIT})")
+        time.sleep(backoff)
     if check and result.returncode != 0:
         die(f"gh {' '.join(str(a) for a in args[:4])}... failed:\n{result.stderr.strip()}")
     return result
 
 
+_last_write_time = 0.0
+
+
+def throttle_write():
+    """Space out mutations so big --all runs don't trip GitHub's secondary
+    rate limits (reads stay unthrottled; creates keep their own longer pause)."""
+    global _last_write_time
+    if WRITE_THROTTLE_SECONDS <= 0:
+        return
+    wait = _last_write_time + WRITE_THROTTLE_SECONDS - time.monotonic()
+    if wait > 0:
+        time.sleep(wait)
+    _last_write_time = time.monotonic()
+
+
 def gh_rest(path, method="GET", check=True, **fields):
+    if method != "GET":
+        throttle_write()
     args = ["api", path, "-X", method]
     for key, value in fields.items():
         if isinstance(value, bool):
@@ -169,6 +206,8 @@ def gh_rest_paginated(path):
 
 
 def gh_graphql(query, check=True, **variables):
+    if query.lstrip().startswith("mutation"):
+        throttle_write()
     args = ["api", "graphql", "-f", f"query={query}"]
     for key, value in variables.items():
         if isinstance(value, int):
@@ -243,11 +282,13 @@ def load_sync_config(project_dir, metarepo_slug):
     if config is None:
         return None
     repo = str(config.get("repo") or "")
-    if not repo or repo.startswith("OWNER/"):
+    explicit = bool(repo) and not repo.startswith("OWNER/")
+    if not explicit:
         repo = metarepo_slug or ""
     if not repo:
         return None
     config["repo"] = repo
+    config["repo_explicit"] = explicit
     config.setdefault("labels", {})
     config["labels"].setdefault("feature", "feature")
     config["labels"].setdefault("epic", "epic")
@@ -258,21 +299,29 @@ def load_sync_config(project_dir, metarepo_slug):
     return config
 
 
+def load_root_config():
+    """Metarepo-wide sync settings — the root github-sync.yaml the bootstrap
+    writes (org template, default board owner, portfolio board)."""
+    return read_yaml_file(REPO_ROOT / "github-sync.yaml") or {}
+
+
 def repo_slug_from_url(url):
     match = re.search(r"github\.com[:/]([^/]+/[^/.]+?)(?:\.git)?/?$", str(url).strip())
     return match.group(1) if match else None
 
 
 def load_source_repos(project_dir, config):
-    """Every repo where story branches can live: repos.yaml clones + the
-    configured issues repo."""
+    """Every repo where this project's story branches can live: the repos.yaml
+    clones, plus the issues repo only when it was set explicitly. A defaulted
+    issues repo is the shared metarepo — story branches never live there, and
+    scanning it would cross-match other projects' story/<key> branches."""
     slugs = []
     repos_config = read_yaml_file(project_dir / "repos.yaml")
     for entry in (repos_config or {}).get("repos", []) or []:
         slug = repo_slug_from_url(entry.get("url", ""))
         if slug:
             slugs.append(slug)
-    if config["repo"] not in slugs:
+    if config.get("repo_explicit") and config["repo"] not in slugs:
         slugs.append(config["repo"])
     return slugs
 
@@ -383,12 +432,30 @@ def parse_frontmatter(text):
         return {}
 
 
+PRD_DATE_RE = re.compile(r"-(\d{4})-?(\d{2})-?(\d{2})$")
+
+
+def prd_sort_key(folder_name):
+    """Order PRD run folders by their trailing date (prd-<name>-<date>), not
+    alphabetically — otherwise the PRD's name outranks its date and the wrong
+    PRD becomes current. Undated folders sort first; the folder name breaks
+    ties deterministically (mtime is clone time in CI, so it can't)."""
+    match = PRD_DATE_RE.search(folder_name)
+    date = "-".join(match.groups()) if match else ""
+    return (bool(match), date, folder_name)
+
+
 def find_prds(planning_dir):
     """Each PRD is a Feature. BMad v6 writes one run folder per PRD
-    (prds/prd-<name>-<date>/prd.md); the newest folder (run folders sort by
-    their date suffix) is the current feature — epics.md is generated from it,
-    so its epics nest under that feature issue."""
-    prd_paths = sorted(planning_dir.glob("prds/*/prd.md")) if planning_dir.is_dir() else []
+    (prds/prd-<name>-<date>/prd.md); the folder with the newest date suffix
+    is the current feature — epics.md is generated from it, so its epics nest
+    under that feature issue."""
+    prd_paths = []
+    if planning_dir.is_dir():
+        prd_paths = sorted(
+            planning_dir.glob("prds/*/prd.md"),
+            key=lambda p: prd_sort_key(p.parent.name),
+        )
     if not prd_paths and planning_dir.is_dir():
         prd_paths = sorted(
             p for p in planning_dir.iterdir()
@@ -530,9 +597,15 @@ def build_pr_section(prs):
 
 
 def list_open_planning_prs(metarepo_slug, project_name, limit=20):
-    pulls = gh_rest_paginated(f"repos/{metarepo_slug}/pulls?state=open&per_page=100")
+    """First open PR touching the project's planning artifacts, checking the
+    `limit` most recently updated PRs (one bounded list call, not a full
+    pagination)."""
+    pulls = gh_rest(
+        f"repos/{metarepo_slug}/pulls?state=open&sort=updated&direction=desc&per_page={limit}",
+        check=False,
+    ) or []
     prefix = f"projects/{project_name}/"
-    for pull in pulls[:limit]:
+    for pull in pulls:
         files = gh_rest(
             f"repos/{metarepo_slug}/pulls/{pull['number']}/files?per_page=100",
             check=False,
@@ -552,7 +625,7 @@ query($owner: String!, $number: Int!) {
       id
       fields(first: 50) {
         nodes {
-          ... on ProjectV2SingleSelectField { id name options { id name } }
+          ... on ProjectV2SingleSelectField { id name options { id name color description } }
         }
       }
     }
@@ -561,6 +634,8 @@ query($owner: String!, $number: Int!) {
 """
 
 PROJECT_QUERY_USER = PROJECT_QUERY.replace("organization", "user")
+
+PROJECT_FIELD = "Project"  # single-select on the portfolio board, one option per project
 
 PROJECT_ITEMS_QUERY = """
 query($projectId: ID!, $cursor: String) {
@@ -571,7 +646,10 @@ query($projectId: ID!, $cursor: String) {
         nodes {
           id
           content { ... on Issue { number repository { nameWithOwner } } }
-          fieldValueByName(name: "Status") {
+          status: fieldValueByName(name: "Status") {
+            ... on ProjectV2ItemFieldSingleSelectValue { name }
+          }
+          project: fieldValueByName(name: "%s") {
             ... on ProjectV2ItemFieldSingleSelectValue { name }
           }
         }
@@ -579,19 +657,25 @@ query($projectId: ID!, $cursor: String) {
     }
   }
 }
-"""
+""" % PROJECT_FIELD
+
+
+def graphql_escape(value):
+    value = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return value.replace("\r", "\\r").replace("\n", "\\n")
 
 
 class ProjectBoard:
     """Runtime handle on one GitHub Project: IDs looked up fresh each run,
-    current item statuses prefetched so unchanged items cost zero writes."""
+    current item field values prefetched so unchanged items cost zero writes.
+    Manages single-select fields — Status everywhere, plus the Project field
+    on the portfolio board."""
 
     def __init__(self, owner, number, dry_run):
         self.dry_run = dry_run
         self.project_id = None
-        self.status_field_id = None
-        self.status_options = {}
-        self.items = {}
+        self.fields = {}  # name -> {"id", "options": {name: {"id","color","description"}}}
+        self.items = {}   # (repo, issue number) -> {"item_id", "values": {field: option}}
 
         data = gh_graphql(PROJECT_QUERY, check=False, owner=owner, number=int(number))
         container = (data or {}).get("data", {}).get("organization")
@@ -608,12 +692,35 @@ class ProjectBoard:
 
         self.project_id = project["id"]
         for field in project["fields"]["nodes"]:
-            if field and field.get("name") == "Status":
-                self.status_field_id = field["id"]
-                self.status_options = {
-                    option["name"]: option["id"] for option in field["options"]
-                }
+            if not field or not field.get("name"):
+                continue
+            self.fields[field["name"]] = {
+                "id": field["id"],
+                "options": {
+                    option["name"]: {
+                        "id": option["id"],
+                        "color": option.get("color") or "GRAY",
+                        "description": option.get("description") or "",
+                    }
+                    for option in field["options"]
+                },
+            }
         self._fetch_items()
+
+    @classmethod
+    def null(cls, dry_run):
+        """A board handle that ignores every write — used when no board is
+        configured so call sites never need a None check."""
+        board = cls.__new__(cls)
+        board.dry_run = dry_run
+        board.project_id = None
+        board.fields = {}
+        board.items = {}
+        return board
+
+    @property
+    def status_options(self):
+        return self.fields.get("Status", {}).get("options", {})
 
     def _fetch_items(self):
         cursor = ""
@@ -627,10 +734,14 @@ class ProjectBoard:
                 content = node.get("content") or {}
                 if content.get("number"):
                     repo = content["repository"]["nameWithOwner"]
-                    status = (node.get("fieldValueByName") or {}).get("name")
+                    values = {}
+                    for field_name, alias in (("Status", "status"), (PROJECT_FIELD, "project")):
+                        value = (node.get(alias) or {}).get("name")
+                        if value:
+                            values[field_name] = value
                     self.items[(repo, content["number"])] = {
                         "item_id": node["id"],
-                        "status": status,
+                        "values": values,
                     }
             page = items.get("pageInfo", {})
             if not page.get("hasNextPage"):
@@ -638,21 +749,32 @@ class ProjectBoard:
             cursor = page["endCursor"]
 
     def set_status(self, repo, issue_number, issue_node_id, status_name):
+        self.set_single_select(repo, issue_number, issue_node_id, "Status", status_name)
+
+    def set_single_select(self, repo, issue_number, issue_node_id, field_name, option_name):
         if not self.project_id:
             return
-        if status_name not in self.status_options:
+        field = self.fields.get(field_name)
+        if not field:
+            warn(f"Project has no '{field_name}' field — skipping that update")
+            return
+        if option_name not in field["options"]:
+            hint = (
+                " (expected: Backlog, Ready, In Progress, In Review, Done)"
+                if field_name == "Status" else ""
+            )
             warn(
-                f"Project has no Status option '{status_name}' — add it in the "
-                f"project settings (expected: Backlog, Ready, In Progress, In Review, Done)"
+                f"Project field '{field_name}' has no option '{option_name}' — "
+                f"add it in the project settings{hint}"
             )
             return
 
         item = self.items.get((repo, issue_number))
-        if item and item["status"] == status_name:
+        if item and item["values"].get(field_name) == option_name:
             return
 
         if self.dry_run:
-            info(f"[dry-run] Would set #{issue_number} → {status_name} on the board")
+            info(f"[dry-run] Would set #{issue_number} {field_name} → {option_name} on the board")
             return
 
         if not item:
@@ -675,7 +797,7 @@ class ProjectBoard:
             if not item_id:
                 warn(f"Could not add #{issue_number} to the project")
                 return
-            item = {"item_id": item_id, "status": None}
+            item = {"item_id": item_id, "values": {}}
             self.items[(repo, issue_number)] = item
 
         gh_graphql(
@@ -689,10 +811,111 @@ class ProjectBoard:
             """,
             check=False,
             projectId=self.project_id, itemId=item["item_id"],
-            fieldId=self.status_field_id,
-            optionId=self.status_options[status_name],
+            fieldId=field["id"],
+            optionId=field["options"][option_name]["id"],
         )
-        item["status"] = status_name
+        item["values"][field_name] = option_name
+
+    def ensure_option(self, field_name, option_name, color="GRAY", description=""):
+        """Append a single-select option if missing. The update mutation
+        replaces the whole option list, so existing options are re-sent by
+        name/color/description — GitHub preserves item values for re-sent
+        names (the option input type has no id field), and the regenerated
+        ids come back in the mutation response."""
+        if not self.project_id:
+            return False
+        field = self.fields.get(field_name)
+        if not field:
+            return False
+        if option_name in field["options"]:
+            return True
+        if len(field["options"]) >= 50:
+            warn(f"Field '{field_name}' is at GitHub's 50-option cap — cannot add '{option_name}'")
+            return False
+        if self.dry_run:
+            info(f"[dry-run] Would add option '{option_name}' to the '{field_name}' field")
+            field["options"][option_name] = {"id": None, "color": color, "description": description}
+            return True
+
+        entries = [
+            f'{{name: "{graphql_escape(name)}", '
+            f'color: {opt["color"]}, description: "{graphql_escape(opt["description"])}"}}'
+            for name, opt in field["options"].items()
+        ]
+        entries.append(
+            f'{{name: "{graphql_escape(option_name)}", color: {color}, '
+            f'description: "{graphql_escape(description)}"}}'
+        )
+        data = gh_graphql(
+            f"""
+            mutation($fieldId: ID!) {{
+              updateProjectV2Field(input: {{fieldId: $fieldId, singleSelectOptions: [{", ".join(entries)}]}}) {{
+                projectV2Field {{ ... on ProjectV2SingleSelectField {{ id options {{ id name }} }} }}
+              }}
+            }}
+            """,
+            check=False, fieldId=field["id"],
+        )
+        payload = (data or {}).get("data", {}).get("updateProjectV2Field") or {}
+        options = (payload.get("projectV2Field") or {}).get("options")
+        if not options:
+            warn(f"Could not add option '{option_name}' to the '{field_name}' field")
+            return False
+        for option in options:
+            entry = field["options"].setdefault(
+                option["name"], {"color": color, "description": description}
+            )
+            entry["id"] = option["id"]
+        ok(f"Added '{option_name}' to the board's {field_name} field")
+        return True
+
+
+def load_portfolio_board(metarepo_slug, dry_run):
+    """The optional metarepo-wide portfolio board (root github-sync.yaml keys
+    portfolio: / portfolio_owner:) aggregating every project's issues, sliced
+    by a per-project option on its Project field. Returns None when not
+    configured — per-project behavior is then unchanged."""
+    root = load_root_config()
+    number = root.get("portfolio")
+    if not number:
+        return None
+    owner = root.get("portfolio_owner") or root.get("project_owner") or (
+        metarepo_slug.split("/")[0] if metarepo_slug else None
+    )
+    if not owner:
+        warn("portfolio: is set but no owner is resolvable — skipping the portfolio board")
+        return None
+    board = ProjectBoard(owner, number, dry_run)
+    if board.project_id and PROJECT_FIELD not in board.fields:
+        warn(
+            f"Portfolio board has no '{PROJECT_FIELD}' field — run the skill's "
+            f"bmad-github-bootstrap.sh --portfolio to repair it; syncing Status only"
+        )
+    return board
+
+
+class BoardSet:
+    """Fans one logical status write out to the per-project board and the
+    optional portfolio board, which additionally gets its Project field set
+    to the owning project so one org-wide board can be sliced per project."""
+
+    def __init__(self, project_board, portfolio_board, project_name):
+        self.project_board = project_board
+        self.portfolio_board = portfolio_board
+        self.project_name = project_name
+        if portfolio_board and portfolio_board.project_id:
+            portfolio_board.ensure_option(PROJECT_FIELD, project_name)
+
+    def set_status(self, repo, issue_number, issue_node_id, status_name):
+        self.project_board.set_status(repo, issue_number, issue_node_id, status_name)
+        portfolio = self.portfolio_board
+        if not portfolio or not portfolio.project_id:
+            return
+        portfolio.set_status(repo, issue_number, issue_node_id, status_name)
+        if PROJECT_FIELD in portfolio.fields:
+            portfolio.set_single_select(
+                repo, issue_number, issue_node_id, PROJECT_FIELD, self.project_name
+            )
 
 
 # ── Issue upsert ─────────────────────────────────────────────────────────────
@@ -834,6 +1057,10 @@ def sync_delivery(project_name, project_dir, config, board, dry_run):
 
     existing = list_synced_issues(repo, DELIVERY_LABEL, project_name)
     prs_by_key = list_story_branch_prs(load_source_repos(project_dir, config))
+    # Shared source repos can carry other projects' story branches — only
+    # this project's story keys matter here.
+    story_keys = {story["key"] for story in stories}
+    prs_by_key = {key: prs for key, prs in prs_by_key.items() if key in story_keys}
     open_pr_keys = keys_with_open_prs(prs_by_key)
 
     root = upsert_issue(
@@ -970,12 +1197,22 @@ def sync_feature_states(repo, prds, feature_issues, stories, board, dry_run):
 
 def close_completed_epics(repo, epics, stories, epic_issues, board, dry_run):
     """Epic issues close when every story under them is done. Never reopened
-    from the epic key's status (epic→done is manual in BMad)."""
+    from the epic key's status (epic→done is manual in BMad). An epic with no
+    stories yet takes its board status from its own sprint status."""
     for epic_num, issue in epic_issues.items():
         if not issue:
             continue
         epic_stories = [s for s in stories if s["epic"] == epic_num]
         if not epic_stories:
+            own_status = epics[epic_num]["status"]
+            if own_status == "done":
+                set_issue_state(repo, issue, should_close=True, dry_run=dry_run)
+                board.set_status(repo, issue["number"], issue["node_id"], "Done")
+            elif str(issue.get("state")).lower() == "open":
+                board.set_status(
+                    repo, issue["number"], issue["node_id"],
+                    SPRINT_TO_PROJECT_STATUS.get(own_status, "Backlog"),
+                )
             continue
         if all(s["status"] == "done" for s in epic_stories):
             set_issue_state(repo, issue, should_close=True, dry_run=dry_run)
@@ -1047,7 +1284,10 @@ def sync_planning(project_name, project_dir, config, board, metarepo_slug, dry_r
 # ── Commands ─────────────────────────────────────────────────────────────────
 
 
-def sync_project(project_name, dry_run):
+_PORTFOLIO_UNSET = object()
+
+
+def sync_project(project_name, dry_run, portfolio=_PORTFOLIO_UNSET):
     project_dir = PROJECTS_DIR / project_name
     if not project_dir.is_dir():
         die(f"Project '{project_name}' not found at {project_dir}")
@@ -1076,15 +1316,18 @@ def sync_project(project_name, dry_run):
             "No GitHub Project configured — issues sync without a board. "
             f"Run the skill's bmad-github-bootstrap.sh {project_name}"
         )
-        board = ProjectBoard.__new__(ProjectBoard)
-        board.dry_run = dry_run
-        board.project_id = None
-        board.items = {}
+        board = ProjectBoard.null(dry_run)
     else:
         board = ProjectBoard(config["project_owner"], config["project"], dry_run)
 
-    sync_planning(project_name, project_dir, config, board, metarepo_slug, dry_run)
-    sync_delivery(project_name, project_dir, config, board, dry_run)
+    # --all loads the portfolio board once and passes it in; single-project
+    # runs resolve it here.
+    if portfolio is _PORTFOLIO_UNSET:
+        portfolio = load_portfolio_board(metarepo_slug, dry_run)
+    boards = BoardSet(board, portfolio, project_name)
+
+    sync_planning(project_name, project_dir, config, boards, metarepo_slug, dry_run)
+    sync_delivery(project_name, project_dir, config, boards, dry_run)
 
 
 def configured_projects():
@@ -1136,12 +1379,36 @@ def main():
     parser.add_argument("--dry-run", "-n", action="store_true")
     args = parser.parse_args()
 
+    if args.command == "sync":
+        auth = run_gh("auth", "status", check=False)
+        if auth.returncode != 0:
+            die("gh CLI not authenticated. Run: gh auth login")
+
     if args.command == "sync" and args.all:
         projects = configured_projects()
         if not projects:
             die("No projects with github-sync.yaml found")
+        # The portfolio board aggregates every project — load it once, not
+        # once per project (its item prefetch is the biggest in the system).
+        portfolio = load_portfolio_board(get_metarepo_slug(), args.dry_run)
+        # One broken project must not block the rest of the nightly sweep:
+        # catch its die()/crash, keep going, and fail the run at the end.
+        failed = []
         for project_name in projects:
-            sync_project(project_name, args.dry_run)
+            try:
+                sync_project(project_name, args.dry_run, portfolio=portfolio)
+            except SystemExit as exc:
+                if exc.code in (0, None):
+                    raise
+                failed.append(project_name)
+            except Exception as exc:  # noqa: BLE001 — isolation boundary
+                warn(f"{project_name}: unexpected error: {exc}")
+                failed.append(project_name)
+        print()
+        if failed:
+            warn(f"Synced {len(projects) - len(failed)}/{len(projects)} projects — failed: {', '.join(failed)}")
+            sys.exit(1)
+        ok(f"Synced {len(projects)} project(s)")
         return
 
     project = args.project or get_active_project()
@@ -1151,9 +1418,6 @@ def main():
     if args.command == "status":
         cmd_status(project)
     else:
-        auth = run_gh("auth", "status", check=False)
-        if auth.returncode != 0:
-            die("gh CLI not authenticated. Run: gh auth login")
         sync_project(project, args.dry_run)
 
 

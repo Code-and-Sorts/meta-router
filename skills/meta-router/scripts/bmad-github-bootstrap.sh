@@ -25,6 +25,7 @@ set -euo pipefail
 #   bash <skills>/meta-router/scripts/bmad-github-bootstrap.sh <project-name>
 #   bash <skills>/meta-router/scripts/bmad-github-bootstrap.sh --all        # every project missing a board
 #   bash <skills>/meta-router/scripts/bmad-github-bootstrap.sh --template   # create/verify the org template only
+#   bash <skills>/meta-router/scripts/bmad-github-bootstrap.sh --portfolio  # one org-wide board across all projects
 # ─────────────────────────────────────────────────────────────────────────────
 
 # The script lives inside the skill directory, so its own location no longer
@@ -491,14 +492,12 @@ set_status_options() {
     return 0
   fi
 
-  # Reuse the existing option ID when a name already matches (e.g. the default
-  # "In Progress"/"Done") so item values and built-in workflow references
-  # survive the update — only genuinely new options get new IDs.
-  local options_literal="" entry option_name color description option_id
+  # The option input type has no id field — the full list is re-sent by name,
+  # and GitHub preserves item values and built-in workflow references for
+  # options whose names already match (e.g. the default "In Progress"/"Done").
+  local options_literal="" entry option_name color description
   while IFS='|' read -r option_name color description; do
-    option_id="$(jq -r --arg n "$option_name" '[.[] | select(.name == $n)][0].id // empty' <<< "$current_json" 2>/dev/null || true)"
     entry="{name: \"$option_name\", color: $color, description: \"$description\"}"
-    [[ -n "$option_id" ]] && entry="{id: \"$option_id\", name: \"$option_name\", color: $color, description: \"$description\"}"
     options_literal+="${options_literal:+, }$entry"
   done <<'OPTS'
 Backlog|GRAY|Defined, not started
@@ -561,11 +560,155 @@ print_view_checklist() {
   echo -e "    │ Everything else      │ Leave off — the sync covers it                     │"
   echo -e "    └──────────────────────┴────────────────────────────────────────────────────┘"
   echo ""
-  echo -e "    ${DIM}Red icons mean a workflow points at a removed Status option (name-matched"
-  echo -e "    options like Done keep their IDs, so most survive). To repair one: click"
+  echo -e "    ${DIM}Red icons mean a workflow points at a removed Status option (options whose"
+  echo -e "    names survive the update usually keep working). To repair one: click"
   echo -e "    it → Edit → reselect the Status value → Save and turn on.${NC}"
   echo -e "  ${DIM}(Label filters work for issues in any org or personal account —"
   echo -e "  org-only issue types stay as extra metadata where available.)${NC}"
+}
+
+# ── Portfolio board ──────────────────────────────────────────────────────────
+# One org-wide board aggregating every project's issues, sliced by a "Project"
+# single-select field (one option per BMad project; the sync appends options
+# for projects added later). Saved as portfolio:/portfolio_owner: in the
+# metarepo-root github-sync.yaml.
+
+PROJECT_FIELD_NAME="Project"
+
+list_project_names() {
+  local config
+  for config in "$PROJECTS_DIR"/*/github-sync.yaml; do
+    [[ -f "$config" ]] || continue
+    basename "$(dirname "$config")"
+  done
+}
+
+ensure_project_field() {
+  local project_id="$1"
+  local field_id
+  field_id="$(gh api graphql -f query='query($id: ID!) {
+      node(id: $id) { ... on ProjectV2 {
+        fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name } } }
+      } }
+    }' -f id="$project_id" \
+    --jq ".data.node.fields.nodes[] | select(.name == \"$PROJECT_FIELD_NAME\") | .id" 2>/dev/null || true)"
+  if [[ -n "$field_id" ]]; then
+    ok "Field '$PROJECT_FIELD_NAME' exists (the sync keeps its options current)"
+    return 0
+  fi
+
+  local options_literal="" name
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    name="${name//\\/\\\\}"
+    name="${name//\"/\\\"}"
+    options_literal+="${options_literal:+, }{name: \"$name\", color: GRAY, description: \"\"}"
+  done < <(list_project_names)
+  # The API rejects an empty option list — seed a placeholder until the
+  # first project exists (the sync appends real options by name).
+  [[ -n "$options_literal" ]] || options_literal='{name: "unassigned", color: GRAY, description: ""}'
+
+  if gh api graphql -f query="mutation(\$projectId: ID!) {
+      createProjectV2Field(input: {projectId: \$projectId, dataType: SINGLE_SELECT, name: \"$PROJECT_FIELD_NAME\", singleSelectOptions: [$options_literal]}) {
+        projectV2Field { ... on ProjectV2SingleSelectField { id } }
+      }
+    }" -f projectId="$project_id" >/dev/null 2>&1; then
+    ok "Created field '$PROJECT_FIELD_NAME' (one option per project)"
+  else
+    warn "Could not create the '$PROJECT_FIELD_NAME' field — add a single-select field named '$PROJECT_FIELD_NAME' to the board manually"
+    return 1
+  fi
+}
+
+print_portfolio_view_checklist() {
+  local url="$1"
+  echo ""
+  echo -e "${BOLD}Suggested portfolio views (no API exists for these) — $url${NC}"
+  echo ""
+  echo -e "  ${BOLD}1. By Project${NC}   Board · group by ${CYAN}$PROJECT_FIELD_NAME${NC} · hide the Done column"
+  echo -e "     filter:  ${CYAN}label:bmad-delivery is:open -label:epic -label:feature${NC}"
+  echo -e "  ${BOLD}2. Features${NC}     Table · group by ${CYAN}$PROJECT_FIELD_NAME${NC} · show the Sub-issue progress field"
+  echo -e "     filter:  ${CYAN}label:bmad-delivery label:feature${NC}"
+  echo -e "  ${BOLD}3. Planning${NC}     Table · group by ${CYAN}$PROJECT_FIELD_NAME${NC}"
+  echo -e "     filter:  ${CYAN}label:bmad-planning${NC}"
+  echo ""
+}
+
+bootstrap_portfolio() {
+  echo ""
+  echo -e "${BOLD}── portfolio board ──${NC}"
+
+  local metarepo fallback_owner
+  metarepo="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)"
+  fallback_owner="${metarepo%%/*}"
+  [[ -n "$fallback_owner" ]] || fallback_owner="$(gh api user --jq .login 2>/dev/null || true)"
+
+  local configured_owner=""
+  [[ -f "$ROOT_SYNC_CFG" ]] && configured_owner="$(read_sync_value "$ROOT_SYNC_CFG" portfolio_owner)"
+  if [[ -n "$configured_owner" && "$configured_owner" != "null" ]]; then
+    BOARD_OWNER="$configured_owner"
+  else
+    pick_board_owner "/dev/null" "$fallback_owner"
+  fi
+  resolve_owner "$BOARD_OWNER" || die "cannot resolve owner '$BOARD_OWNER' — check the name and token"
+
+  # Re-runs repair rather than duplicate: verify the saved board, then make
+  # sure its Status options and Project field are right.
+  local existing_number=""
+  [[ -f "$ROOT_SYNC_CFG" ]] && existing_number="$(read_sync_value "$ROOT_SYNC_CFG" portfolio)"
+  if [[ -n "$existing_number" && "$existing_number" != "null" ]]; then
+    local existing_id
+    existing_id="$(project_exists "$BOARD_OWNER" "$existing_number")"
+    if [[ -n "$existing_id" ]]; then
+      ok "Portfolio board #$existing_number already exists for '$BOARD_OWNER' — verifying fields"
+      set_status_options "$existing_id" || true
+      ensure_project_field "$existing_id" || true
+      save_root_sync_value portfolio_owner "$BOARD_OWNER"
+      return 0
+    fi
+    warn "github-sync.yaml points at portfolio #$existing_number but it doesn't exist — creating a new one"
+  fi
+
+  ensure_template "$BOARD_OWNER"
+
+  local title="${BMAD_PORTFOLIO_TITLE:-BMad Portfolio}"
+  local created="" project_id project_number project_url
+  if [[ -n "$TEMPLATE_PROJECT_ID" ]]; then
+    info "Creating private portfolio board '$title' from the template..."
+    created="$(gh api graphql -f query='mutation($projectId: ID!, $ownerId: ID!, $title: String!) {
+        copyProjectV2(input: {projectId: $projectId, ownerId: $ownerId, title: $title, includeDraftIssues: false}) {
+          projectV2 { id number url }
+        }
+      }' -f projectId="$TEMPLATE_PROJECT_ID" -f ownerId="$OWNER_ID" -f title="$title" \
+      --jq '.data.copyProjectV2.projectV2' 2>/dev/null)" || created=""
+    [[ -n "$created" ]] || warn "Template copy failed — falling back to direct creation"
+  fi
+  if [[ -z "$created" ]]; then
+    info "Creating private portfolio board '$title'..."
+    created="$(gh api graphql -f query='mutation($ownerId: ID!, $title: String!) {
+        createProjectV2(input: {ownerId: $ownerId, title: $title}) {
+          projectV2 { id number url }
+        }
+      }' -f ownerId="$OWNER_ID" -f title="$title" \
+      --jq '.data.createProjectV2.projectV2' 2>/dev/null)" ||
+      die "Portfolio creation failed — your token likely lacks the project scope. Run: gh auth refresh -s project"
+    [[ -n "$created" ]] || die "Portfolio creation returned nothing — run: gh auth refresh -s project"
+  fi
+
+  project_id="$(jq -r .id <<< "$created")"
+  project_number="$(jq -r .number <<< "$created")"
+  project_url="$(jq -r .url <<< "$created")"
+
+  gh api graphql -f query='mutation($id: ID!) {
+      updateProjectV2(input: {projectId: $id, public: false}) { projectV2 { id } }
+    }' -f id="$project_id" >/dev/null 2>&1 || warn "Could not pin visibility — verify it is Private in settings"
+
+  ok "Portfolio board #$project_number (private): $project_url"
+  set_status_options "$project_id" || true
+  ensure_project_field "$project_id" || true
+  save_root_sync_value portfolio "$project_number"
+  save_root_sync_value portfolio_owner "$BOARD_OWNER"
+  print_portfolio_view_checklist "$project_url"
 }
 
 bootstrap_project() {
@@ -668,7 +811,12 @@ bootstrap_project() {
 
 main() {
   local target="${1:-}"
-  [[ -n "$target" ]] || die "Usage: bmad-github-bootstrap.sh <project-name> | --all | --template"
+  [[ -n "$target" ]] || die "Usage: bmad-github-bootstrap.sh <project-name> | --all | --template | --portfolio"
+
+  if [[ "$target" == "--portfolio" ]]; then
+    bootstrap_portfolio
+    return 0
+  fi
 
   if [[ "$target" == "--template" ]]; then
     local metarepo fallback_owner
@@ -706,6 +854,8 @@ main() {
     echo -e "    and all source repos (the sync workflow refuses to run without it)"
     echo -e "  - In each source repo: install ${CYAN}$SKILL_DIR_REL/templates/.github/workflows/bmad-pr-ping.yml${NC},"
     echo -e "    set variable ${CYAN}BMAD_METAREPO${NC} and secret ${CYAN}BMAD_METAREPO_TOKEN${NC}"
+    echo -e "  - Optional: ${CYAN}bash $SKILL_DIR_REL/scripts/bmad-github-bootstrap.sh --portfolio${NC} creates one"
+    echo -e "    org-wide board aggregating every project, sliced by a Project field"
     echo ""
   fi
   return "$failures"

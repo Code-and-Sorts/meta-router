@@ -203,6 +203,36 @@ class TestFeatures:
         assert prds[1]["key"] == "feature-prd-app-2026-05-02"
         assert prds[1]["status"] == "draft"
 
+    def test_date_outranks_name_for_current_prd(self, tmp_path):
+        # Alphabetically "prd-zebra-..." sorts last, but "prd-app-..." is newer.
+        planning = tmp_path / "features" / "planning-artifacts"
+        self.make_prd(planning, "prd-zebra-2026-01-10", "Zebra", "final")
+        self.make_prd(planning, "prd-app-2026-05-02", "App", "draft")
+        prds = bmad_issues.find_prds(planning)
+        assert [p["title"] for p in prds] == ["Zebra", "App"]
+        assert prds[1]["current"] is True
+
+    def test_compact_date_suffix(self, tmp_path):
+        planning = tmp_path / "features" / "planning-artifacts"
+        self.make_prd(planning, "prd-zebra-20260110", "Zebra", "final")
+        self.make_prd(planning, "prd-app-2026-05-02", "App", "draft")
+        prds = bmad_issues.find_prds(planning)
+        assert prds[-1]["title"] == "App"
+        assert prds[-1]["current"] is True
+
+    def test_undated_folders_sort_before_dated(self, tmp_path):
+        planning = tmp_path / "features" / "planning-artifacts"
+        self.make_prd(planning, "prd-scratch", "Scratch", "draft")
+        self.make_prd(planning, "prd-app-2026-01-10", "App", "final")
+        prds = bmad_issues.find_prds(planning)
+        assert prds[-1]["title"] == "App"
+        assert prds[-1]["current"] is True
+
+    def test_prd_sort_key(self):
+        assert bmad_issues.prd_sort_key("prd-app-2026-05-02") == (True, "2026-05-02", "prd-app-2026-05-02")
+        assert bmad_issues.prd_sort_key("prd-app-20260502")[1] == "2026-05-02"
+        assert bmad_issues.prd_sort_key("prd-app") == (False, "", "prd-app")
+
     def test_bare_prd_file_fallback(self, tmp_path):
         planning = tmp_path / "features" / "planning-artifacts"
         planning.mkdir(parents=True)
@@ -261,6 +291,37 @@ class TestOrphanDetection:
         assert "1-1-old-name" not in live
         assert "1-1-new-name" in live
         assert "epic-1" in live
+
+
+class TestSourceRepoScoping:
+    REPOS_YAML = """\
+repos:
+  - name: web
+    url: git@github.com:org/web.git
+  - name: api
+    url: https://github.com/org/api
+"""
+
+    def test_defaulted_issues_repo_is_not_scanned(self, tmp_path):
+        (tmp_path / "repos.yaml").write_text(self.REPOS_YAML)
+        config = {"repo": "org/metarepo", "repo_explicit": False}
+        assert bmad_issues.load_source_repos(tmp_path, config) == ["org/web", "org/api"]
+
+    def test_explicit_issues_repo_is_scanned(self, tmp_path):
+        (tmp_path / "repos.yaml").write_text(self.REPOS_YAML)
+        config = {"repo": "org/web-issues", "repo_explicit": True}
+        assert bmad_issues.load_source_repos(tmp_path, config) == [
+            "org/web", "org/api", "org/web-issues",
+        ]
+
+    def test_explicit_repo_already_in_repos_yaml_not_duplicated(self, tmp_path):
+        (tmp_path / "repos.yaml").write_text(self.REPOS_YAML)
+        config = {"repo": "org/web", "repo_explicit": True}
+        assert bmad_issues.load_source_repos(tmp_path, config) == ["org/web", "org/api"]
+
+    def test_no_repos_yaml_and_defaulted_repo_scans_nothing(self, tmp_path):
+        config = {"repo": "org/metarepo", "repo_explicit": False}
+        assert bmad_issues.load_source_repos(tmp_path, config) == []
 
 
 class TestFindEpicsDoc:

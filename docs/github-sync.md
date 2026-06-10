@@ -18,14 +18,25 @@ Each project gets a private GitHub Project board and two label-separated issue t
 3. Add a `BMAD_PROJECT_TOKEN` secret: PAT with **Projects read/write** + **Issues read/write** + **Pull requests read**. The default `GITHUB_TOKEN` cannot access Projects v2. If everything lives under one org, a fine-grained PAT works; if repos/boards span multiple orgs or your personal account, use a classic PAT (`project` + `repo` scopes; fine-grained PATs are single-owner) or a GitHub App installed per org.
 4. Install `.claude/skills/meta-router/templates/.github/workflows/bmad-pr-ping.yml` (bundled with the skill) into each source repo so story PRs update the board immediately (the nightly reconcile covers anything missed).
 
+## One board across all projects (optional)
+
+Per-project boards answer "how is this project going?"; the portfolio board answers "what is everyone doing?". Run
+
+```bash
+bash .claude/skills/meta-router/scripts/bmad-github-bootstrap.sh --portfolio
+```
+
+to create one org-wide board that aggregates every project's delivery and planning issues. It gets the same Status options plus a **Project** single-select field with one option per BMad project, so views can group or filter by project (the bootstrap prints suggested views). The board number is saved as `portfolio:` (+ `portfolio_owner:`) in the metarepo-root `github-sync.yaml`; from then on every sync adds each issue to both its project board and the portfolio, sets Status on both, and stamps the Project field. New projects get their Project option appended automatically on first sync. Remove the `portfolio:` key to turn the fan-out off — per-project boards are unaffected. Re-running `--portfolio` repairs an existing board (Status options, missing Project field) instead of creating a duplicate. Mind GitHub's ~1,200 active items per board: archive Done items on the portfolio as it grows.
+
 ## How the sync behaves
 
 The sync is the single writer of issue state and board Status:
 
 - BMad statuses map to `Backlog / Ready / In Progress / In Review / Done`; `done` closes the issue.
-- An open PR on a `story/<story-key>` branch in any `repos.yaml` repo forces `In Review`. Story PRs (one per affected repo) are linked onto the story issue automatically: a maintained **Pull Requests** section lists each PR with its repo and state (open/merged/closed).
+- An open PR on a `story/<story-key>` branch in any `repos.yaml` repo forces `In Review`. Story PRs (one per affected repo) are linked onto the story issue automatically: a maintained **Pull Requests** section lists each PR with its repo and state (open/merged/closed). The scan covers the project's `repos.yaml` repos, plus its issues repo only when `repo:` is set explicitly — the defaulted metarepo holds every project's issues but no story branches. If two projects share a source repo, give their stories distinct slugs: a `story/<key>` branch can't tell which project's identical key it belongs to.
 - Stories that vanish after renumbering are closed as not-planned with a `bmad-orphaned` label, never deleted.
 - Re-runs update rather than duplicate; each issue carries a hidden `<!-- bmad-sync:key:project -->` marker.
+- Rate-limited API calls are retried with backoff and mutations are lightly spaced; `sync --all` keeps going past a broken project and reports the failures at the end (exit 1, so the Action run still flags it). Tunables are in the [reference](reference.md#issue-sync-cli).
 
 ## Run it locally
 

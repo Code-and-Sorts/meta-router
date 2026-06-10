@@ -107,10 +107,18 @@ python .claude/skills/meta-router/scripts/bmad-issues.py [sync|status] [--projec
 | --- | --- |
 | `sync` (default) / `status` | write issue state, or report it without writing |
 | `--project NAME`, `-p` | target a project (default: the active one) |
-| `--all` | every configured project |
+| `--all` | every configured project; one project's failure no longer stops the rest — failures are summarized at the end and the run exits 1 |
 | `--dry-run`, `-n` | print actions without writing |
 
 For example, `python .claude/skills/meta-router/scripts/bmad-issues.py sync --all --dry-run` previews the sync for every configured project.
+
+Sync tuning environment variables:
+
+| Variable | Effect | Default |
+| --- | --- | --- |
+| `BMAD_SYNC_THROTTLE` | pause after each issue creation (seconds) | `1.0` |
+| `BMAD_SYNC_WRITE_THROTTLE` | minimum spacing between any two API mutations (seconds, `0` disables) | `0.25` |
+| `BMAD_SYNC_RETRIES` | retries for rate-limited API calls (10/30/60s backoff) | `3` |
 
 Needs `gh` authenticated. Setup and behavior live in [GitHub sync](github-sync.md).
 
@@ -127,7 +135,7 @@ meta-router/
 │       │   ├── setup.sh            #   bootstrap a new metarepo
 │       │   ├── meta-router.sh      #   context switcher
 │       │   ├── bmad-issues.py      #   GitHub Issues sync (optional)
-│       │   └── bmad-github-bootstrap.sh  # per-project board/label/template setup (optional)
+│       │   └── bmad-github-bootstrap.sh  # board/label/template/portfolio setup (optional)
 │       └── templates/
 │           ├── .github/workflows/
 │           │   ├── ci.yml          #   metarepo CI (shellcheck), installed into each metarepo

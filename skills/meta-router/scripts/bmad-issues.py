@@ -13,6 +13,11 @@ GitHub as two label-separated issue trees, then updates a GitHub Project board:
       one "Planning: <project>" issue whose checklist tracks which planning
       artifacts (brief, PRD, UX, architecture, epics) exist.
 
+When the metarepo-root github-sync.yaml has a portfolio: board number (see
+bmad-github-bootstrap.sh --portfolio), every issue is additionally placed on
+that org-wide board with the same Status plus a Project single-select option
+naming its project — one aggregated view across all projects.
+
 Design rules (see review that shaped them):
   - This script is the ONLY writer of issue state and Project Status. "In
     Review" is derived here from open story/<key> PRs across the project's

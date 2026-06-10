@@ -15,6 +15,8 @@ on:
       - 'projects/**/planning-artifacts/**'
       - 'projects/**/implementation-artifacts/**'
       - 'projects/**/github-sync.yaml'
+      # metarepo-wide settings (portfolio board, template) affect every project
+      - 'github-sync.yaml'
 
   # Sent by bmad-pr-ping.yml in source repos when a story/* PR opens/closes
   repository_dispatch:
@@ -82,6 +84,12 @@ jobs:
           if [ "$EVENT_NAME" = "push" ] && [ -n "$PUSH_BEFORE" ] && \
              ! echo "$PUSH_BEFORE" | grep -q '^0*$' && \
              git cat-file -e "$PUSH_BEFORE" 2>/dev/null; then
+            # Metarepo-wide settings changed (e.g. the portfolio board) →
+            # every project needs a pass.
+            if ! git diff --quiet "$PUSH_BEFORE" "$PUSH_AFTER" -- 'github-sync.yaml'; then
+              echo "projects=--all" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             # NF >= 3 keeps only projects/<name>/<file> paths, so files sitting
             # directly under projects/ are not mistaken for project names.
             CHANGED=$(git diff --name-only "$PUSH_BEFORE" "$PUSH_AFTER" -- 'projects/' \

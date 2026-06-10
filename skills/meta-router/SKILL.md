@@ -161,7 +161,9 @@ pushed to GitHub:
 
 1. `bash <tool-home>/skills/meta-router/scripts/bmad-github-bootstrap.sh <project>`
    creates the private board, labels, and issue types (first run can save an
-   org-level view template so later boards copy their views).
+   org-level view template so later boards copy their views). Optionally run it
+   with `--portfolio` to also create one org-wide board aggregating every
+   project, sliced by a Project field.
 2. Add a `BMAD_PROJECT_TOKEN` secret: PAT with Projects read/write, Issues
    read/write, Pull requests read. The default `GITHUB_TOKEN` cannot access
    Projects v2.

@@ -692,6 +692,76 @@ class TestSyncEndToEnd:
         assert fake.writes == []
 
 
+@pytest.fixture
+def portfolio_metarepo(fake, metarepo):
+    """metarepo plus a configured portfolio board (#9) with a Project field."""
+    (metarepo / "github-sync.yaml").write_text(
+        "project_owner: org\nportfolio: 9\nportfolio_owner: org\n"
+    )
+    fake.add_board(owner="org", number=9, fields={
+        "Status": ["Backlog", "Ready", "In Progress", "In Review", "Done"],
+        "Project": [],
+    })
+    return metarepo
+
+
+class TestPortfolioBoard:
+    def test_issues_land_on_both_boards_with_project_field(self, fake, portfolio_metarepo):
+        bmad_issues.sync_project("alpha", dry_run=False)
+
+        by_title = {i["title"]: i for i in fake.issues["org/meta"].values()}
+        story = by_title["Story 1.2: Profile"]
+        per_project = fake.boards[("org", 7)]
+        portfolio = fake.boards[("org", 9)]
+
+        def item_values(board, number):
+            return next(
+                i["values"] for i in board["items"].values() if i["number"] == number
+            )
+
+        assert item_values(per_project, story["number"]) == {"Status": "In Progress"}
+        assert item_values(portfolio, story["number"]) == {
+            "Status": "In Progress", "Project": "alpha",
+        }
+        # Planning issues are aggregated too
+        planning = by_title["Planning: alpha"]
+        assert item_values(portfolio, planning["number"])["Project"] == "alpha"
+
+    def test_project_option_created_once(self, fake, portfolio_metarepo):
+        bmad_issues.sync_project("alpha", dry_run=False)
+        option_writes = [w for w in fake.writes if w[0] == "field-options"]
+        assert len(option_writes) == 1
+        assert option_writes[0][1][1] == ["alpha"]
+        fake.writes.clear()
+        bmad_issues.sync_project("alpha", dry_run=False)
+        assert [w for w in fake.writes if w[0] == "field-options"] == []
+
+    def test_second_run_writes_nothing(self, fake, portfolio_metarepo):
+        bmad_issues.sync_project("alpha", dry_run=False)
+        fake.writes.clear()
+        bmad_issues.sync_project("alpha", dry_run=False)
+        noisy = [w for w in fake.writes if w[0] != "sub-issue"]
+        assert noisy == []
+
+    def test_portfolio_without_project_field_syncs_status_only(self, fake, portfolio_metarepo):
+        fake.boards[("org", 9)]["fields"].pop("Project")
+        bmad_issues.sync_project("alpha", dry_run=False)
+        portfolio = fake.boards[("org", 9)]
+        assert portfolio["items"]  # statuses still mirrored
+        assert all("Project" not in i["values"] for i in portfolio["items"].values())
+
+    def test_no_portfolio_config_changes_nothing(self, fake, metarepo):
+        bmad_issues.sync_project("alpha", dry_run=False)
+        assert ("org", 9) not in fake.boards
+        assert fake.boards[("org", 7)]["items"]
+
+    def test_missing_portfolio_board_does_not_block_sync(self, fake, metarepo):
+        (metarepo / "github-sync.yaml").write_text("portfolio: 9\nportfolio_owner: org\n")
+        bmad_issues.sync_project("alpha", dry_run=False)  # board 9 doesn't exist
+        titles = {i["title"] for i in fake.issues["org/meta"].values()}
+        assert "Delivery: Alpha" in titles
+
+
 class TestSyncAllIsolation:
     def test_one_broken_project_does_not_block_the_rest(self, fake, metarepo, monkeypatch, capsys):
         # "broken" sorts before "alpha"? No — configured_projects sorts, so

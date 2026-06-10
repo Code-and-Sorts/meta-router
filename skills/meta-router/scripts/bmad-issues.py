@@ -291,6 +291,12 @@ def load_sync_config(project_dir, metarepo_slug):
     return config
 
 
+def load_root_config():
+    """Metarepo-wide sync settings — the root github-sync.yaml the bootstrap
+    writes (org template, default board owner, portfolio board)."""
+    return read_yaml_file(REPO_ROOT / "github-sync.yaml") or {}
+
+
 def repo_slug_from_url(url):
     match = re.search(r"github\.com[:/]([^/]+/[^/.]+?)(?:\.git)?/?$", str(url).strip())
     return match.group(1) if match else None
@@ -856,6 +862,54 @@ class ProjectBoard:
         return True
 
 
+def load_portfolio_board(metarepo_slug, dry_run):
+    """The optional metarepo-wide portfolio board (root github-sync.yaml keys
+    portfolio: / portfolio_owner:) aggregating every project's issues, sliced
+    by a per-project option on its Project field. Returns None when not
+    configured — per-project behavior is then unchanged."""
+    root = load_root_config()
+    number = root.get("portfolio")
+    if not number:
+        return None
+    owner = root.get("portfolio_owner") or root.get("project_owner") or (
+        metarepo_slug.split("/")[0] if metarepo_slug else None
+    )
+    if not owner:
+        warn("portfolio: is set but no owner is resolvable — skipping the portfolio board")
+        return None
+    board = ProjectBoard(owner, number, dry_run)
+    if board.project_id and PROJECT_FIELD not in board.fields:
+        warn(
+            f"Portfolio board has no '{PROJECT_FIELD}' field — run the skill's "
+            f"bmad-github-bootstrap.sh --portfolio to repair it; syncing Status only"
+        )
+    return board
+
+
+class BoardSet:
+    """Fans one logical status write out to the per-project board and the
+    optional portfolio board, which additionally gets its Project field set
+    to the owning project so one org-wide board can be sliced per project."""
+
+    def __init__(self, project_board, portfolio_board, project_name):
+        self.project_board = project_board
+        self.portfolio_board = portfolio_board
+        self.project_name = project_name
+        if portfolio_board and portfolio_board.project_id:
+            portfolio_board.ensure_option(PROJECT_FIELD, project_name)
+
+    def set_status(self, repo, issue_number, issue_node_id, status_name):
+        self.project_board.set_status(repo, issue_number, issue_node_id, status_name)
+        portfolio = self.portfolio_board
+        if not portfolio or not portfolio.project_id:
+            return
+        portfolio.set_status(repo, issue_number, issue_node_id, status_name)
+        if PROJECT_FIELD in portfolio.fields:
+            portfolio.set_single_select(
+                repo, issue_number, issue_node_id, PROJECT_FIELD, self.project_name
+            )
+
+
 # ── Issue upsert ─────────────────────────────────────────────────────────────
 
 
@@ -1222,7 +1276,10 @@ def sync_planning(project_name, project_dir, config, board, metarepo_slug, dry_r
 # ── Commands ─────────────────────────────────────────────────────────────────
 
 
-def sync_project(project_name, dry_run):
+_PORTFOLIO_UNSET = object()
+
+
+def sync_project(project_name, dry_run, portfolio=_PORTFOLIO_UNSET):
     project_dir = PROJECTS_DIR / project_name
     if not project_dir.is_dir():
         die(f"Project '{project_name}' not found at {project_dir}")
@@ -1255,8 +1312,14 @@ def sync_project(project_name, dry_run):
     else:
         board = ProjectBoard(config["project_owner"], config["project"], dry_run)
 
-    sync_planning(project_name, project_dir, config, board, metarepo_slug, dry_run)
-    sync_delivery(project_name, project_dir, config, board, dry_run)
+    # --all loads the portfolio board once and passes it in; single-project
+    # runs resolve it here.
+    if portfolio is _PORTFOLIO_UNSET:
+        portfolio = load_portfolio_board(metarepo_slug, dry_run)
+    boards = BoardSet(board, portfolio, project_name)
+
+    sync_planning(project_name, project_dir, config, boards, metarepo_slug, dry_run)
+    sync_delivery(project_name, project_dir, config, boards, dry_run)
 
 
 def configured_projects():
@@ -1317,12 +1380,15 @@ def main():
         projects = configured_projects()
         if not projects:
             die("No projects with github-sync.yaml found")
+        # The portfolio board aggregates every project — load it once, not
+        # once per project (its item prefetch is the biggest in the system).
+        portfolio = load_portfolio_board(get_metarepo_slug(), args.dry_run)
         # One broken project must not block the rest of the nightly sweep:
         # catch its die()/crash, keep going, and fail the run at the end.
         failed = []
         for project_name in projects:
             try:
-                sync_project(project_name, args.dry_run)
+                sync_project(project_name, args.dry_run, portfolio=portfolio)
             except SystemExit as exc:
                 if exc.code in (0, None):
                     raise

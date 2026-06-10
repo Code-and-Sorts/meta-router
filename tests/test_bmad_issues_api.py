@@ -333,6 +333,51 @@ class TestGhLayer:
         assert bmad_issues.gh_rest_paginated("repos/o/r/issues") == []
 
 
+class TestRetry:
+    """Retry logic lives inside the real run_gh, so fake subprocess instead."""
+
+    def test_rate_limited_call_retries_then_succeeds(self, monkeypatch):
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            if len(calls) < 3:
+                return completed(stderr="HTTP 429: You have exceeded a secondary rate limit", returncode=1)
+            return completed("{}")
+
+        monkeypatch.setattr(bmad_issues.subprocess, "run", fake_run)
+        monkeypatch.setattr(bmad_issues.time, "sleep", lambda seconds: None)
+        result = bmad_issues.run_gh("api", "repos/o/r", check=False)
+        assert result.returncode == 0
+        assert len(calls) == 3
+
+    def test_non_rate_limit_failure_does_not_retry(self, monkeypatch):
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return completed(stderr="HTTP 404: Not Found", returncode=1)
+
+        monkeypatch.setattr(bmad_issues.subprocess, "run", fake_run)
+        monkeypatch.setattr(bmad_issues.time, "sleep", lambda seconds: None)
+        result = bmad_issues.run_gh("api", "repos/o/r", check=False)
+        assert result.returncode == 1
+        assert len(calls) == 1
+
+    def test_retries_exhausted_returns_failure(self, monkeypatch):
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return completed(stderr="rate limit exceeded", returncode=1)
+
+        monkeypatch.setattr(bmad_issues.subprocess, "run", fake_run)
+        monkeypatch.setattr(bmad_issues.time, "sleep", lambda seconds: None)
+        result = bmad_issues.run_gh("api", "repos/o/r", check=False)
+        assert result.returncode == 1
+        assert len(calls) == bmad_issues.RETRY_LIMIT + 1
+
+
 # ── issue mapping + upserts ──────────────────────────────────────────────────
 
 
@@ -602,3 +647,28 @@ class TestSyncEndToEnd:
     def test_dry_run_writes_nothing(self, fake, metarepo):
         bmad_issues.sync_project("alpha", dry_run=True)
         assert fake.writes == []
+
+
+class TestSyncAllIsolation:
+    def test_one_broken_project_does_not_block_the_rest(self, fake, metarepo, monkeypatch, capsys):
+        # "broken" sorts before "alpha"? No — configured_projects sorts, so
+        # alpha runs after broken either way; make broken fail during config load.
+        broken = metarepo / "projects" / "a-broken"
+        broken.mkdir(parents=True)
+        (broken / "github-sync.yaml").write_text("repo: [unclosed\n")
+
+        monkeypatch.setattr(bmad_issues.sys, "argv", ["bmad-issues.py", "sync", "--all"])
+        with pytest.raises(SystemExit) as excinfo:
+            bmad_issues.main()
+        assert excinfo.value.code == 1
+
+        out = capsys.readouterr().out
+        assert "failed: a-broken" in out
+        # alpha still synced fully despite a-broken crashing first
+        titles = {i["title"] for i in fake.issues["org/meta"].values()}
+        assert "Delivery: Alpha" in titles
+
+    def test_all_healthy_projects_exit_zero(self, fake, metarepo, monkeypatch, capsys):
+        monkeypatch.setattr(bmad_issues.sys, "argv", ["bmad-issues.py", "sync", "--all"])
+        bmad_issues.main()
+        assert "Synced 1 project(s)" in capsys.readouterr().out

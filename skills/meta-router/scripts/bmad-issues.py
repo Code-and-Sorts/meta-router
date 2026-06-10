@@ -97,6 +97,10 @@ PLANNING_DOCS = [
 ]
 
 CREATE_THROTTLE_SECONDS = float(os.environ.get("BMAD_SYNC_THROTTLE", "1.0"))
+WRITE_THROTTLE_SECONDS = float(os.environ.get("BMAD_SYNC_WRITE_THROTTLE", "0.25"))
+RETRY_LIMIT = int(os.environ.get("BMAD_SYNC_RETRIES", "3"))
+RETRY_BACKOFF_SECONDS = (10, 30, 60)
+RATE_LIMIT_RE = re.compile(r"HTTP 403|HTTP 429|rate limit|secondary rate", re.IGNORECASE)
 
 
 def die(msg):
@@ -120,18 +124,43 @@ def warn(msg):
 
 
 def run_gh(*args, check=True, input_text=None):
-    try:
-        result = subprocess.run(
-            ["gh", *args], capture_output=True, text=True, input=input_text
-        )
-    except FileNotFoundError:
-        die("gh CLI not found — install it from https://cli.github.com and run: gh auth login")
+    for attempt in range(RETRY_LIMIT + 1):
+        try:
+            result = subprocess.run(
+                ["gh", *args], capture_output=True, text=True, input=input_text
+            )
+        except FileNotFoundError:
+            die("gh CLI not found — install it from https://cli.github.com and run: gh auth login")
+        if result.returncode == 0 or attempt == RETRY_LIMIT:
+            break
+        if not RATE_LIMIT_RE.search(result.stderr or ""):
+            break
+        backoff = RETRY_BACKOFF_SECONDS[min(attempt, len(RETRY_BACKOFF_SECONDS) - 1)]
+        warn(f"GitHub rate limited — retrying in {backoff}s ({attempt + 1}/{RETRY_LIMIT})")
+        time.sleep(backoff)
     if check and result.returncode != 0:
         die(f"gh {' '.join(str(a) for a in args[:4])}... failed:\n{result.stderr.strip()}")
     return result
 
 
+_last_write_time = 0.0
+
+
+def throttle_write():
+    """Space out mutations so big --all runs don't trip GitHub's secondary
+    rate limits (reads stay unthrottled; creates keep their own longer pause)."""
+    global _last_write_time
+    if WRITE_THROTTLE_SECONDS <= 0:
+        return
+    wait = _last_write_time + WRITE_THROTTLE_SECONDS - time.monotonic()
+    if wait > 0:
+        time.sleep(wait)
+    _last_write_time = time.monotonic()
+
+
 def gh_rest(path, method="GET", check=True, **fields):
+    if method != "GET":
+        throttle_write()
     args = ["api", path, "-X", method]
     for key, value in fields.items():
         if isinstance(value, bool):
@@ -169,6 +198,8 @@ def gh_rest_paginated(path):
 
 
 def gh_graphql(query, check=True, **variables):
+    if query.lstrip().startswith("mutation"):
+        throttle_write()
     args = ["api", "graphql", "-f", f"query={query}"]
     for key, value in variables.items():
         if isinstance(value, int):
@@ -1178,12 +1209,33 @@ def main():
     parser.add_argument("--dry-run", "-n", action="store_true")
     args = parser.parse_args()
 
+    if args.command == "sync":
+        auth = run_gh("auth", "status", check=False)
+        if auth.returncode != 0:
+            die("gh CLI not authenticated. Run: gh auth login")
+
     if args.command == "sync" and args.all:
         projects = configured_projects()
         if not projects:
             die("No projects with github-sync.yaml found")
+        # One broken project must not block the rest of the nightly sweep:
+        # catch its die()/crash, keep going, and fail the run at the end.
+        failed = []
         for project_name in projects:
-            sync_project(project_name, args.dry_run)
+            try:
+                sync_project(project_name, args.dry_run)
+            except SystemExit as exc:
+                if exc.code in (0, None):
+                    raise
+                failed.append(project_name)
+            except Exception as exc:  # noqa: BLE001 — isolation boundary
+                warn(f"{project_name}: unexpected error: {exc}")
+                failed.append(project_name)
+        print()
+        if failed:
+            warn(f"Synced {len(projects) - len(failed)}/{len(projects)} projects — failed: {', '.join(failed)}")
+            sys.exit(1)
+        ok(f"Synced {len(projects)} project(s)")
         return
 
     project = args.project or get_active_project()
@@ -1193,9 +1245,6 @@ def main():
     if args.command == "status":
         cmd_status(project)
     else:
-        auth = run_gh("auth", "status", check=False)
-        if auth.returncode != 0:
-            die("gh CLI not authenticated. Run: gh auth login")
         sync_project(project, args.dry_run)
 
 

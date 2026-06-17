@@ -4,7 +4,9 @@ Meta Router keeps several BMad projects in one repo by sharing a single `_bmad/`
 
 ## The symlink swap
 
-`switch <project>` repoints symlinks at the repo root and writes `active-project.txt`. BMad reads and writes through them unchanged; nothing is copied or deleted.
+`switch <project>` repoints symlinks at the repo root. BMad reads and writes through them unchanged; nothing is copied or deleted.
+
+The output symlink's target *is* the record of which project is active — `current`, `validate`, and the issue sync all read the active project from it, so there's no separate state file to drift out of sync. The output and docs symlinks are committed (their targets are tracked), so a fresh clone already knows the active project; switching lands as a tracked change.
 
 | Symlink | points to |
 | --- | --- |
@@ -31,7 +33,6 @@ my-metarepo/
 ├── docs -> projects/food-inventory/docs
 ├── repos -> projects/food-inventory/repos
 ├── implementation -> projects/food-inventory/implementation
-├── active-project.txt
 ├── .claude/                        # agent tool home (.github / .codex for other tools)
 │   ├── skills/meta-router/         # the skill: SKILL.md + scripts/ + templates/
 │   └── knowledge/shared-context.md # overall shared context (all projects)

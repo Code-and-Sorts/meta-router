@@ -31,7 +31,11 @@ BOOTSTRAP_SELF="$SKILL_DIR_REL/scripts/bmad-github-bootstrap.sh"
 
 BMAD_CORE="$REPO_ROOT/_bmad"
 PROJECTS_DIR="$REPO_ROOT/projects"
-ACTIVE_FILE="$REPO_ROOT/active-project.txt"
+# The active project is encoded in the output symlink's target
+# (projects/<name>/<output-folder>) — the committed symlink is the single source
+# of truth. Older metarepos recorded it in this file; it's only referenced now to
+# clean it up on switch.
+LEGACY_ACTIVE_FILE="$REPO_ROOT/active-project.txt"
 
 # Skills and shared knowledge live under the agent tool's home directory
 # (TOOL_DIR, e.g. ".claude"). The relative bases (SKILLS_BASE, KNOWLEDGE_BASE)
@@ -174,12 +178,11 @@ project_repos_yaml() { echo "$PROJECTS_DIR/$1/repos.yaml"; }
 project_repos_dir()  { echo "$PROJECTS_DIR/$1/repos"; }
 project_impl_dir()   { echo "$PROJECTS_DIR/$1/implementation"; }
 
+# The active project is read from the output symlink's target — switching
+# repoints the symlink, so it always reflects the live context with no separate
+# state file to drift out of sync.
 get_active_project() {
-  if [[ -f "$ACTIVE_FILE" ]]; then
-    tr -d '[:space:]' < "$ACTIVE_FILE"
-  else
-    echo ""
-  fi
+  get_symlink_target
 }
 
 require_active_project() {
@@ -511,7 +514,9 @@ cmd_switch() {
   fi
 
   switch_all_symlinks "$project_name"
-  echo "$project_name" > "$ACTIVE_FILE"
+  # The output symlink now records the active project; drop the legacy state file
+  # if a metarepo created before this change still carries one.
+  rm -f "$LEGACY_ACTIVE_FILE"
 
   ok "Switched to ${BOLD}$project_name${NC}"
 
@@ -579,30 +584,15 @@ cmd_list() {
 cmd_current() {
   local active
   active="$(get_active_project)"
-  local symlink_target
-  symlink_target="$(get_symlink_target)"
 
-  if [[ -z "$active" && -z "$symlink_target" ]]; then
+  if [[ -z "$active" ]]; then
     warn "No active project. Run: ${BOLD}meta-router switch <project>${NC}"
     echo ""
     list_projects
     return
   fi
 
-  if [[ -n "$active" && -n "$symlink_target" && "$active" != "$symlink_target" ]]; then
-    warn "Mismatch: active-project.txt says '${active}' but symlink points to '${symlink_target}'"
-    info "Run ${BOLD}meta-router switch $active${NC} to fix."
-    return
-  fi
-
-  if [[ -n "$active" && -z "$symlink_target" ]]; then
-    warn "active-project.txt says '${active}' but no symlinks exist (fresh clone?)"
-    info "Run ${BOLD}meta-router switch $active${NC} to create them."
-    return
-  fi
-
-  local name="${active:-$symlink_target}"
-  echo -e "${GREEN}●${NC} Active project: ${BOLD}$name${NC}"
+  echo -e "${GREEN}●${NC} Active project: ${BOLD}$active${NC}"
 
   local sp
   sp="$(symlink_path)"
@@ -1053,19 +1043,10 @@ cmd_validate() {
     info "$SKILLS_BASE/project not set (no project skills)"
   fi
 
-  # active-project.txt
+  # Active project — derived from the output symlink validated above (single
+  # source of truth, so there's nothing separate to cross-check here).
   local active
   active="$(get_active_project)"
-  if [[ -n "$active" ]]; then
-    ok "active-project.txt → $active"
-    local sym_target
-    sym_target="$(get_symlink_target)"
-    if [[ -n "$sym_target" && "$active" != "$sym_target" ]]; then
-      warn "Mismatch: active-project.txt='$active' vs symlink='$sym_target'"; errors=$((errors + 1))
-    fi
-  else
-    warn "active-project.txt missing or empty"; errors=$((errors + 1))
-  fi
 
   # Active project artifacts
   local out

@@ -731,17 +731,18 @@ if [[ -f ".gitignore" ]]; then
     cat >> .gitignore << GITIGNORE
 
 # ── meta-router managed ─────────────────────────────────────────────────────
-# Output + docs symlinks at the repo root (recreated on switch). Anchored with a
-# leading slash so the per-project projects/*/$USER_OUTPUT_FOLDER artifacts stay tracked.
-/$USER_OUTPUT_FOLDER
-/$USER_DOCS_FOLDER
-# Root repos/implementation symlinks (recreated on switch)
+# The output + docs symlinks at the repo root are COMMITTED (not listed here):
+# their target is the active project, so meta-router reads the active project
+# from the output symlink instead of a separate file. Switching repoints them,
+# which lands as a tracked change.
+# Root repos/implementation symlinks point at gitignored content, so they're
+# recreated on switch rather than committed.
 /repos
 /implementation
 # Source repo clones + per-story worktrees (managed independently)
 projects/*/repos/
 projects/*/implementation/
-# Project skills symlink
+# Project skills symlink (recreated on switch)
 $SKILLS_BASE/project
 # Personal BMad customization overrides
 _bmad/custom/*.user.toml
@@ -752,12 +753,13 @@ else
   cat > .gitignore << GITIGNORE
 # ── BMad Metarepo ────────────────────────────────────────────────────────────
 
-# Output + docs symlinks at the repo root (recreated on switch). Anchored with a
-# leading slash so the per-project projects/*/<folder> artifacts stay tracked.
-/$USER_OUTPUT_FOLDER
-/$USER_DOCS_FOLDER
+# The output + docs symlinks at the repo root are COMMITTED (not listed here):
+# their target is the active project, so meta-router reads the active project
+# from the output symlink instead of a separate file. Switching repoints them,
+# which lands as a tracked change.
 
-# Root repos/implementation symlinks (recreated on switch)
+# Root repos/implementation symlinks point at gitignored content, so they're
+# recreated on switch rather than committed.
 /repos
 /implementation
 
@@ -765,7 +767,7 @@ else
 projects/*/repos/
 projects/*/implementation/
 
-# Project skills symlink (managed by meta-router)
+# Project skills symlink (recreated on switch)
 $SKILLS_BASE/project
 
 # Personal BMad customization overrides (team overrides are committed)

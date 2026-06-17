@@ -628,7 +628,6 @@ def metarepo(fake, tmp_path, monkeypatch):
     """A minimal metarepo with one project (alpha) wired to a fake board."""
     monkeypatch.setattr(bmad_issues, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(bmad_issues, "PROJECTS_DIR", tmp_path / "projects")
-    monkeypatch.setattr(bmad_issues, "ACTIVE_FILE", tmp_path / "active-project.txt")
     monkeypatch.setenv("BMAD_METAREPO_SLUG", "org/meta")
     monkeypatch.setenv("BMAD_OUTPUT_FOLDER", "features")
 

@@ -66,7 +66,6 @@ import yaml
 # the sync workflow invokes it.
 REPO_ROOT = Path.cwd()
 PROJECTS_DIR = REPO_ROOT / "projects"
-ACTIVE_FILE = REPO_ROOT / "active-project.txt"
 
 MARKER_RE = re.compile(r"<!-- bmad-sync:([^:]+):([^ ]+) -->")
 
@@ -226,9 +225,27 @@ def gh_graphql(query, check=True, **variables):
 # ── Metarepo + project resolution ────────────────────────────────────────────
 
 
+def resolve_output_folder_name():
+    """Resolve the output folder name (env → BMad config → 'features') without
+    needing a specific project, mirroring meta-router.sh's resolution order."""
+    env_value = os.environ.get("BMAD_OUTPUT_FOLDER")
+    if env_value:
+        return env_value
+    bmm_config = read_yaml_file(REPO_ROOT / "_bmad" / "bmm" / "config.yaml")
+    if bmm_config and bmm_config.get("output_folder"):
+        return strip_project_root(bmm_config["output_folder"])
+    return "features"
+
+
 def get_active_project():
-    if ACTIVE_FILE.exists():
-        return ACTIVE_FILE.read_text().strip()
+    """Derive the active project from the output symlink's target
+    (projects/<name>/<output-folder>). The committed symlink is the single
+    source of truth — there is no separate active-project file."""
+    link = REPO_ROOT / resolve_output_folder_name()
+    if link.is_symlink():
+        parts = Path(os.readlink(link)).parts
+        if len(parts) >= 2 and parts[0] == "projects":
+            return parts[1]
     return None
 
 

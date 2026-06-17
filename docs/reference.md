@@ -56,7 +56,6 @@ Validating BMad metarepo...
 ✓ repos symlink → projects/food-inventory/repos (valid)
 ✓ implementation symlink → projects/food-inventory/implementation (valid)
 ✓ .claude/skills/project symlink (valid)
-✓ active-project.txt → food-inventory
 ...
 ✓ All checks passed.
 ```

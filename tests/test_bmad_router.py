@@ -131,9 +131,11 @@ class TestInit:
 
     def test_auto_switches(self, metarepo):
         run(metarepo, "init", "alpha")
-        assert (metarepo / "active-project.txt").read_text().strip() == "alpha"
+        # The output symlink records the active project — no separate state file.
+        assert os.readlink(metarepo / "features") == "projects/alpha/features"
         assert (metarepo / "features").is_symlink()
         assert (metarepo / "docs").is_symlink()
+        assert not (metarepo / "active-project.txt").exists()
 
     def test_duplicate_init_switches(self, metarepo):
         run(metarepo, "init", "alpha")
@@ -296,11 +298,22 @@ class TestSwitch:
         assert os.readlink(metarepo / "docs") == "projects/alpha/docs"
         assert "alpha" in os.readlink(metarepo / ".claude" / "skills" / "project")
 
-    def test_updates_active_project_file(self, metarepo):
+    def test_active_project_tracks_symlink(self, metarepo):
         run(metarepo, "init", "alpha")
         run(metarepo, "init", "beta")
         run(metarepo, "switch", "alpha")
-        assert (metarepo / "active-project.txt").read_text().strip() == "alpha"
+        # The output symlink is the single source of truth for the active project.
+        assert os.readlink(metarepo / "features") == "projects/alpha/features"
+        result = run(metarepo, "current")
+        assert "alpha" in result.stdout
+
+    def test_switch_clears_legacy_active_file(self, metarepo):
+        """A metarepo created before symlink-derived context may carry a stale
+        active-project.txt; switching removes it."""
+        run(metarepo, "init", "alpha")
+        (metarepo / "active-project.txt").write_text("stale\n")
+        run(metarepo, "switch", "alpha")
+        assert not (metarepo / "active-project.txt").exists()
 
     def test_nonexistent_fails(self, metarepo):
         result = run(metarepo, "switch", "ghost", expect_fail=True)
@@ -510,21 +523,24 @@ class TestCurrent:
         result = run(metarepo, "current")
         assert "No active project" in result.stdout
 
-    def test_detects_mismatch(self, metarepo):
+    def test_current_derives_from_symlink(self, metarepo):
+        """The active project follows the output symlink, even when a stale
+        active-project.txt names a different one."""
         run(metarepo, "init", "alpha")
-        run(metarepo, "init", "beta")
+        run(metarepo, "init", "beta")  # active is now beta
         (metarepo / "active-project.txt").write_text("alpha")
         result = run(metarepo, "current")
-        assert "Mismatch" in result.stdout
+        assert "beta" in result.stdout
+        assert "Mismatch" not in result.stdout
 
-    def test_hints_switch_when_symlinks_missing(self, metarepo):
-        """Fresh clone: active-project.txt is committed but symlinks are not."""
+    def test_no_active_when_symlink_missing(self, metarepo):
+        """Without the output symlink there is no active project — the symlink
+        is the only source of truth."""
         run(metarepo, "init", "alpha")
         for link in ("features", "docs", "repos", "implementation"):
             os.remove(metarepo / link)
         result = run(metarepo, "current")
-        assert "no symlinks exist" in result.stdout
-        assert "switch alpha" in result.stdout
+        assert "No active project" in result.stdout
 
     def test_reports_active_skill_count(self, metarepo):
         # `current` counts skills through the .../project symlink; find needs -L

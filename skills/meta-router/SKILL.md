@@ -42,11 +42,10 @@ below. Non-interactive: set `BMAD_SETUP_NONINTERACTIVE=1` and answer via
 ```
 metarepo/
 ├── _bmad/                              # Shared core
-├── features -> projects/X/features             # Output symlink (configurable name)
-├── docs -> projects/X/docs                     # Docs symlink (configurable name)
+├── features -> projects/X/features             # Output symlink (committed; records active project)
+├── docs -> projects/X/docs                     # Docs symlink (committed; configurable name)
 ├── repos -> projects/X/repos                   # Source repo clones (active project)
 ├── implementation -> projects/X/implementation  # Per-story worktrees (active project)
-├── active-project.txt
 ├── .claude/                            # Agent tool home — tool-specific dir (see below)
 │   ├── skills/
 │   │   ├── meta-router/                # This skill: SKILL.md + scripts/ + templates/

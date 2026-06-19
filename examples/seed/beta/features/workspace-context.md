@@ -4,7 +4,7 @@
 
 - **Name**: Beta
 - **Description**: A demo single-repo CLI tool, included to contrast with the
-  multi-repo `alpha` project — its stories default to the one configured repo.
+  multi-repo `alpha` workspace — its stories default to the one configured repo.
 - **Tech Stack**: Go CLI (`cli` repo).
 
 ## Implementation Rules

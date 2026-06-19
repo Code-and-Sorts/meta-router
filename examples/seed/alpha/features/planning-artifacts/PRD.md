@@ -1,12 +1,12 @@
 # Alpha — Product Requirements Document
 
 > Example artifact. Generated for the meta-router `example` branch to show what a
-> populated project looks like.
+> populated workspace looks like.
 
 ## Summary
 
 Alpha is a small task tracker. Users create tasks, assign them, and mark them
-done. It exists to demonstrate a full-stack BMad project whose stories span both
+done. It exists to demonstrate a full-stack BMad workspace whose stories span both
 a web front end and a GraphQL API.
 
 ## Goals

@@ -3,12 +3,12 @@ set -euo pipefail
 
 # ─────────────────────────────────────────────────────────────────────────────
 # bmad-github-bootstrap.sh — Create the GitHub Project (v2) board for a BMad
-# project, plus the org issue types and labels the sync relies on.
+# workspace, plus the org issue types and labels the sync relies on.
 #
 # Run locally with an authenticated gh CLI (needs the `project` scope:
 #   gh auth refresh -s project
 # and org admin if issue types don't exist yet). This is deliberately NOT a
-# pipeline job: project creation is once per BMad project, and parts of board
+# pipeline job: project creation is once per BMad workspace, and parts of board
 # setup (views, built-in workflows) have no API and are printed as a manual
 # checklist instead.
 #
@@ -22,19 +22,19 @@ set -euo pipefail
 #
 # Usage (from the metarepo root; the script ships inside the meta-router
 # skill, e.g. .claude/skills/meta-router/scripts/):
-#   bash <skills>/meta-router/scripts/bmad-github-bootstrap.sh <project-name>
-#   bash <skills>/meta-router/scripts/bmad-github-bootstrap.sh --all        # every project missing a board
+#   bash <skills>/meta-router/scripts/bmad-github-bootstrap.sh <workspace-name>
+#   bash <skills>/meta-router/scripts/bmad-github-bootstrap.sh --all        # every workspace missing a board
 #   bash <skills>/meta-router/scripts/bmad-github-bootstrap.sh --template   # create/verify the org template only
-#   bash <skills>/meta-router/scripts/bmad-github-bootstrap.sh --portfolio  # one org-wide board across all projects
+#   bash <skills>/meta-router/scripts/bmad-github-bootstrap.sh --portfolio  # one org-wide board across all workspaces
 # ─────────────────────────────────────────────────────────────────────────────
 
 # The script lives inside the skill directory, so its own location no longer
-# marks the metarepo root — it runs from the root instead (where projects/
+# marks the metarepo root — it runs from the root instead (where workspaces/
 # lives), matching meta-router.sh.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(dirname "$SCRIPT_DIR")"
 REPO_ROOT="$(pwd)"
-PROJECTS_DIR="$REPO_ROOT/projects"
+WORKSPACES_DIR="$REPO_ROOT/workspaces"
 SKILL_DIR_REL="${SKILL_DIR#"$REPO_ROOT"/}"
 
 RED='\033[0;31m'
@@ -129,7 +129,7 @@ save_root_sync_value() {
     sed -i.bak "s|^$key:.*|$key: $value|" "$ROOT_SYNC_CFG" && rm -f "$ROOT_SYNC_CFG.bak"
   else
     if [[ ! -f "$ROOT_SYNC_CFG" ]]; then
-      printf '# Metarepo-wide GitHub sync settings.\n# Per-project settings live in projects/<name>/github-sync.yaml.\n\n' > "$ROOT_SYNC_CFG"
+      printf '# Metarepo-wide GitHub sync settings.\n# Per-workspace settings live in workspaces/<name>/github-sync.yaml.\n\n' > "$ROOT_SYNC_CFG"
     fi
     echo "$key: $value" >> "$ROOT_SYNC_CFG"
   fi
@@ -142,8 +142,8 @@ save_template_name() {
 
 # ── Board owner ──────────────────────────────────────────────────────────────
 # Boards (and the template) can live under any org you belong to, or your
-# personal account — independent of where the metarepo or a project's code
-# lives. Resolution: per-project `project_owner:` > metarepo-root
+# personal account — independent of where the metarepo or a workspace's code
+# lives. Resolution: per-workspace `project_owner:` > metarepo-root
 # `project_owner:` > interactive choice (offered once per run, saveable) >
 # the issues repo's owner.
 
@@ -151,9 +151,9 @@ BOARD_OWNER=""
 BOARD_OWNER_RUN_CHOICE=""
 
 pick_board_owner() {
-  local project_cfg="$1" fallback="$2"
+  local workspace_cfg="$1" fallback="$2"
   local configured
-  configured="$(read_sync_value "$project_cfg" project_owner)"
+  configured="$(read_sync_value "$workspace_cfg" project_owner)"
   if [[ -n "$configured" && "$configured" != "null" ]]; then
     BOARD_OWNER="$configured"
     return
@@ -568,16 +568,16 @@ print_view_checklist() {
 }
 
 # ── Portfolio board ──────────────────────────────────────────────────────────
-# One org-wide board aggregating every project's issues, sliced by a "Project"
-# single-select field (one option per BMad project; the sync appends options
-# for projects added later). Saved as portfolio:/portfolio_owner: in the
+# One org-wide board aggregating every workspace's issues, sliced by a "Project"
+# single-select field (one option per BMad workspace; the sync appends options
+# for workspaces added later). Saved as portfolio:/portfolio_owner: in the
 # metarepo-root github-sync.yaml.
 
 PROJECT_FIELD_NAME="Project"
 
 list_project_names() {
   local config
-  for config in "$PROJECTS_DIR"/*/github-sync.yaml; do
+  for config in "$WORKSPACES_DIR"/*/github-sync.yaml; do
     [[ -f "$config" ]] || continue
     basename "$(dirname "$config")"
   done
@@ -605,7 +605,7 @@ ensure_project_field() {
     options_literal+="${options_literal:+, }{name: \"$name\", color: GRAY, description: \"\"}"
   done < <(list_project_names)
   # The API rejects an empty option list — seed a placeholder until the
-  # first project exists (the sync appends real options by name).
+  # first workspace exists (the sync appends real options by name).
   [[ -n "$options_literal" ]] || options_literal='{name: "unassigned", color: GRAY, description: ""}'
 
   if gh api graphql -f query="mutation(\$projectId: ID!) {
@@ -613,7 +613,7 @@ ensure_project_field() {
         projectV2Field { ... on ProjectV2SingleSelectField { id } }
       }
     }" -f projectId="$project_id" >/dev/null 2>&1; then
-    ok "Created field '$PROJECT_FIELD_NAME' (one option per project)"
+    ok "Created field '$PROJECT_FIELD_NAME' (one option per workspace)"
   else
     warn "Could not create the '$PROJECT_FIELD_NAME' field — add a single-select field named '$PROJECT_FIELD_NAME' to the board manually"
     return 1
@@ -711,17 +711,17 @@ bootstrap_portfolio() {
   print_portfolio_view_checklist "$project_url"
 }
 
-bootstrap_project() {
-  local project_name="$1"
-  local config="$PROJECTS_DIR/$project_name/github-sync.yaml"
+bootstrap_workspace() {
+  local workspace_name="$1"
+  local config="$WORKSPACES_DIR/$workspace_name/github-sync.yaml"
 
   echo ""
-  echo -e "${BOLD}── $project_name ──${NC}"
+  echo -e "${BOLD}── $workspace_name ──${NC}"
 
-  [[ -f "$config" ]] || { warn "No github-sync.yaml — run: bash $SKILL_DIR_REL/scripts/meta-router.sh init $project_name (or copy $SKILL_DIR_REL/templates/github-sync.yaml), then re-run"; return 1; }
+  [[ -f "$config" ]] || { warn "No github-sync.yaml — run: bash $SKILL_DIR_REL/scripts/meta-router.sh init $workspace_name (or copy $SKILL_DIR_REL/templates/github-sync.yaml), then re-run"; return 1; }
 
   # Issues default to the metarepo; repo: in github-sync.yaml overrides per
-  # project for teams that want issues next to the code.
+  # workspace for teams that want issues next to the code.
   local repo
   repo="$(read_sync_value "$config" repo)"
   if [[ -z "$repo" || "$repo" == OWNER/* ]]; then
@@ -765,24 +765,24 @@ bootstrap_project() {
 
   local created project_id project_number project_url
   if [[ -n "$TEMPLATE_PROJECT_ID" ]]; then
-    info "Creating private GitHub Project '$project_name' from the template..."
+    info "Creating private GitHub Project '$workspace_name' from the template..."
     created="$(gh api graphql -f query='mutation($projectId: ID!, $ownerId: ID!, $title: String!) {
         copyProjectV2(input: {projectId: $projectId, ownerId: $ownerId, title: $title, includeDraftIssues: false}) {
           projectV2 { id number url }
         }
-      }' -f projectId="$TEMPLATE_PROJECT_ID" -f ownerId="$OWNER_ID" -f title="$project_name" \
+      }' -f projectId="$TEMPLATE_PROJECT_ID" -f ownerId="$OWNER_ID" -f title="$workspace_name" \
       --jq '.data.copyProjectV2.projectV2' 2>/dev/null)" || created=""
     if [[ -z "$created" ]]; then
       warn "Template copy failed — falling back to direct creation"
     fi
   fi
   if [[ -z "${created:-}" ]]; then
-    info "Creating private GitHub Project '$project_name'..."
+    info "Creating private GitHub Project '$workspace_name'..."
     created="$(gh api graphql -f query='mutation($ownerId: ID!, $title: String!) {
         createProjectV2(input: {ownerId: $ownerId, title: $title}) {
           projectV2 { id number url }
         }
-      }' -f ownerId="$OWNER_ID" -f title="$project_name" \
+      }' -f ownerId="$OWNER_ID" -f title="$workspace_name" \
       --jq '.data.createProjectV2.projectV2' 2>/dev/null)" ||
       die "Project creation failed — your token likely lacks the project scope. Run: gh auth refresh -s project"
     [[ -n "$created" ]] || die "Project creation returned nothing — run: gh auth refresh -s project"
@@ -811,7 +811,7 @@ bootstrap_project() {
 
 main() {
   local target="${1:-}"
-  [[ -n "$target" ]] || die "Usage: bmad-github-bootstrap.sh <project-name> | --all | --template | --portfolio"
+  [[ -n "$target" ]] || die "Usage: bmad-github-bootstrap.sh <workspace-name> | --all | --template | --portfolio"
 
   if [[ "$target" == "--portfolio" ]]; then
     bootstrap_portfolio
@@ -834,17 +834,17 @@ main() {
   local failures=0
   if [[ "$target" == "--all" ]]; then
     local found=0
-    for config in "$PROJECTS_DIR"/*/github-sync.yaml; do
+    for config in "$WORKSPACES_DIR"/*/github-sync.yaml; do
       [[ -f "$config" ]] || continue
       found=1
-      bootstrap_project "$(basename "$(dirname "$config")")" || failures=$((failures + 1))
+      bootstrap_workspace "$(basename "$(dirname "$config")")" || failures=$((failures + 1))
     done
-    [[ "$found" == 1 ]] || die "No projects with github-sync.yaml under projects/"
+    [[ "$found" == 1 ]] || die "No workspaces with github-sync.yaml under workspaces/"
   else
-    bootstrap_project "$target" || failures=1
+    bootstrap_workspace "$target" || failures=1
   fi
 
-  # setup.sh bootstraps several projects in one run and prints this block once
+  # setup.sh bootstraps several workspaces in one run and prints this block once
   # itself, so it suppresses the per-run copy here.
   if [[ "${BMAD_BOOTSTRAP_SKIP_NEXT_STEPS:-0}" != 1 ]]; then
     echo ""
@@ -855,7 +855,7 @@ main() {
     echo -e "  - In each source repo: install ${CYAN}$SKILL_DIR_REL/templates/.github/workflows/bmad-pr-ping.yml${NC},"
     echo -e "    set variable ${CYAN}BMAD_METAREPO${NC} and secret ${CYAN}BMAD_METAREPO_TOKEN${NC}"
     echo -e "  - Optional: ${CYAN}bash $SKILL_DIR_REL/scripts/bmad-github-bootstrap.sh --portfolio${NC} creates one"
-    echo -e "    org-wide board aggregating every project, sliced by a Project field"
+    echo -e "    org-wide board aggregating every workspace, sliced by a Project field"
     echo ""
   fi
   return "$failures"

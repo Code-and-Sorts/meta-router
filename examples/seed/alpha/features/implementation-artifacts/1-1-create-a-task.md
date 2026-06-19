@@ -35,8 +35,8 @@ This is a full-stack story. When implemented, meta-router creates a worktree per
 affected repo:
 
 ```
-projects/alpha/implementation/1-1-create-a-task/web/   # branch story/1-1-create-a-task
-projects/alpha/implementation/1-1-create-a-task/api/   # branch story/1-1-create-a-task
+workspaces/alpha/implementation/1-1-create-a-task/web/   # branch story/1-1-create-a-task
+workspaces/alpha/implementation/1-1-create-a-task/api/   # branch story/1-1-create-a-task
 ```
 
 Implement the web and api changes in their respective worktrees and open one PR

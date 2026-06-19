@@ -1,6 +1,6 @@
 name: Ping BMad metarepo about story PRs
 
-# Install this workflow in each project SOURCE repo (not the metarepo).
+# Install this workflow in each workspace SOURCE repo (not the metarepo).
 #
 # It does exactly one thing: when a PR on a story/<story-key> branch opens,
 # reopens, or closes, it triggers the metarepo's sync workflow via

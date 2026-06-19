@@ -2,28 +2,28 @@
 """
 bmad-issues.py — Sync BMad v6 artifacts to GitHub Issues + Projects.
 
-Reads the active (or specified) project's BMad artifacts and mirrors them to
+Reads the active (or specified) workspace's BMad artifacts and mirrors them to
 GitHub as two label-separated issue trees, then updates a GitHub Project board:
 
-  Delivery tree (label bmad-delivery, in the project's source repo):
+  Delivery tree (label bmad-delivery, in the workspace's source repo):
       Delivery root  →  Epic issues  →  Story sub-issues
     driven by the flat `development_status:` map in sprint-status.yaml.
 
   Planning checklist (label bmad-planning, in the metarepo):
-      one "Planning: <project>" issue whose checklist tracks which planning
+      one "Planning: <workspace>" issue whose checklist tracks which planning
       artifacts (brief, PRD, UX, architecture, epics) exist.
 
 When the metarepo-root github-sync.yaml has a portfolio: board number (see
 bmad-github-bootstrap.sh --portfolio), every issue is additionally placed on
 that org-wide board with the same Status plus a Project single-select option
-naming its project — one aggregated view across all projects.
+naming its workspace — one aggregated view across all workspaces.
 
 Design rules (see review that shaped them):
   - This script is the ONLY writer of issue state and Project Status. "In
-    Review" is derived here from open story/<key> PRs across the project's
+    Review" is derived here from open story/<key> PRs across the workspace's
     repos.yaml repos — no per-repo workflow writes status.
   - No committed state file: the story-key → issue mapping is rebuilt every
-    run from `<!-- bmad-sync:key:project -->` body markers via one paginated
+    run from `<!-- bmad-sync:key:workspace -->` body markers via one paginated
     issue list per repo (consistent, unlike search).
   - sprint-status.yaml is never written. BMad owns it.
   - Orphans (keys that vanished after renumbering) are closed as not-planned
@@ -41,11 +41,11 @@ examples below use Claude Code.
 
 Usage:
     SKILL=.claude/skills/meta-router/scripts
-    python $SKILL/bmad-issues.py                     # sync active project
-    python $SKILL/bmad-issues.py --project food-inventory
-    python $SKILL/bmad-issues.py --all               # every configured project
+    python $SKILL/bmad-issues.py                     # sync active workspace
+    python $SKILL/bmad-issues.py --workspace food-inventory
+    python $SKILL/bmad-issues.py --all               # every configured workspace
     python $SKILL/bmad-issues.py --dry-run
-    python $SKILL/bmad-issues.py status --project food-inventory
+    python $SKILL/bmad-issues.py status --workspace food-inventory
 """
 
 import argparse
@@ -65,7 +65,7 @@ import yaml
 # the metarepo root — matching meta-router.sh / bmad-github-bootstrap.sh, and how
 # the sync workflow invokes it.
 REPO_ROOT = Path.cwd()
-PROJECTS_DIR = REPO_ROOT / "projects"
+WORKSPACES_DIR = REPO_ROOT / "workspaces"
 
 MARKER_RE = re.compile(r"<!-- bmad-sync:([^:]+):([^ ]+) -->")
 
@@ -222,12 +222,12 @@ def gh_graphql(query, check=True, **variables):
         return None
 
 
-# ── Metarepo + project resolution ────────────────────────────────────────────
+# ── Metarepo + workspace resolution ────────────────────────────────────────────
 
 
 def resolve_output_folder_name():
     """Resolve the output folder name (env → BMad config → 'features') without
-    needing a specific project, mirroring meta-router.sh's resolution order."""
+    needing a specific workspace, mirroring meta-router.sh's resolution order."""
     env_value = os.environ.get("BMAD_OUTPUT_FOLDER")
     if env_value:
         return env_value
@@ -237,14 +237,14 @@ def resolve_output_folder_name():
     return "features"
 
 
-def get_active_project():
-    """Derive the active project from the output symlink's target
-    (projects/<name>/<output-folder>). The committed symlink is the single
+def get_active_workspace():
+    """Derive the active workspace from the output symlink's target
+    (workspaces/<name>/<output-folder>). The committed symlink is the single
     source of truth — there is no separate active-project file."""
     link = REPO_ROOT / resolve_output_folder_name()
     if link.is_symlink():
         parts = Path(os.readlink(link)).parts
-        if len(parts) >= 2 and parts[0] == "projects":
+        if len(parts) >= 2 and parts[0] == "workspaces":
             return parts[1]
     return None
 
@@ -261,8 +261,8 @@ def strip_project_root(value):
     return re.sub(r"^\{project-root\}/", "", value)
 
 
-def resolve_output_folder(project_dir):
-    """Resolve the project's output folder name from BMad config, mirroring
+def resolve_output_folder(workspace_dir):
+    """Resolve the workspace's output folder name from BMad config, mirroring
     the resolution order in the meta-router skill's meta-router.sh."""
     env_value = os.environ.get("BMAD_OUTPUT_FOLDER")
     if env_value:
@@ -272,8 +272,8 @@ def resolve_output_folder(project_dir):
     if bmm_config and bmm_config.get("output_folder"):
         return strip_project_root(bmm_config["output_folder"])
 
-    for path in sorted(project_dir.rglob("sprint-status.yaml")):
-        return path.parent.parent.relative_to(project_dir).parts[0]
+    for path in sorted(workspace_dir.rglob("sprint-status.yaml")):
+        return path.parent.parent.relative_to(workspace_dir).parts[0]
 
     return "features"
 
@@ -291,11 +291,11 @@ def get_metarepo_slug():
     return None
 
 
-def load_sync_config(project_dir, metarepo_slug):
+def load_sync_config(workspace_dir, metarepo_slug):
     """Load github-sync.yaml. `repo:` is optional — delivery issues default to
-    the metarepo (the project-management home); set repo: to keep a project's
+    the metarepo (the workspace-management home); set repo: to keep a workspace's
     issues next to its code instead."""
-    config = read_yaml_file(project_dir / "github-sync.yaml")
+    config = read_yaml_file(workspace_dir / "github-sync.yaml")
     if config is None:
         return None
     repo = str(config.get("repo") or "")
@@ -327,13 +327,13 @@ def repo_slug_from_url(url):
     return match.group(1) if match else None
 
 
-def load_source_repos(project_dir, config):
-    """Every repo where this project's story branches can live: the repos.yaml
+def load_source_repos(workspace_dir, config):
+    """Every repo where this workspace's story branches can live: the repos.yaml
     clones, plus the issues repo only when it was set explicitly. A defaulted
     issues repo is the shared metarepo — story branches never live there, and
-    scanning it would cross-match other projects' story/<key> branches."""
+    scanning it would cross-match other workspaces' story/<key> branches."""
     slugs = []
-    repos_config = read_yaml_file(project_dir / "repos.yaml")
+    repos_config = read_yaml_file(workspace_dir / "repos.yaml")
     for entry in (repos_config or {}).get("repos", []) or []:
         slug = repo_slug_from_url(entry.get("url", ""))
         if slug:
@@ -524,11 +524,11 @@ def detect_planning_docs(planning_dir):
 # ── GitHub state (rebuilt every run from markers) ────────────────────────────
 
 
-def build_marker(key, project_name):
-    return f"<!-- bmad-sync:{key}:{project_name} -->"
+def build_marker(key, workspace_name):
+    return f"<!-- bmad-sync:{key}:{workspace_name} -->"
 
 
-def list_synced_issues(repo, label, project_name):
+def list_synced_issues(repo, label, workspace_name):
     """One paginated list per repo rebuilds the key→issue mapping from body
     markers — no committed state file, no search-index lag."""
     issues = gh_rest_paginated(
@@ -539,7 +539,7 @@ def list_synced_issues(repo, label, project_name):
         if "pull_request" in issue:
             continue
         match = MARKER_RE.search(issue.get("body") or "")
-        if match and match.group(2) == project_name:
+        if match and match.group(2) == workspace_name:
             mapping[match.group(1)] = issue
     return mapping
 
@@ -569,7 +569,7 @@ PR_STATE_ICONS = {"open": "🔄", "merged": "🟣", "closed": "⚪"}
 
 
 def list_story_branch_prs(repo_slugs):
-    """Map story_key → PRs on story/<key> branches across the project's repos.
+    """Map story_key → PRs on story/<key> branches across the workspace's repos.
 
     Open PRs are fetched fully; merged/closed ones come from the newest 100
     per repo — stories are short-lived, so a story's merged PRs are recent."""
@@ -613,15 +613,15 @@ def build_pr_section(prs):
     return "\n".join(lines)
 
 
-def list_open_planning_prs(metarepo_slug, project_name, limit=20):
-    """First open PR touching the project's planning artifacts, checking the
+def list_open_planning_prs(metarepo_slug, workspace_name, limit=20):
+    """First open PR touching the workspace's planning artifacts, checking the
     `limit` most recently updated PRs (one bounded list call, not a full
     pagination)."""
     pulls = gh_rest(
         f"repos/{metarepo_slug}/pulls?state=open&sort=updated&direction=desc&per_page={limit}",
         check=False,
     ) or []
-    prefix = f"projects/{project_name}/"
+    prefix = f"workspaces/{workspace_name}/"
     for pull in pulls:
         files = gh_rest(
             f"repos/{metarepo_slug}/pulls/{pull['number']}/files?per_page=100",
@@ -652,7 +652,7 @@ query($owner: String!, $number: Int!) {
 
 PROJECT_QUERY_USER = PROJECT_QUERY.replace("organization", "user")
 
-PROJECT_FIELD = "Project"  # single-select on the portfolio board, one option per project
+PROJECT_FIELD = "Project"  # single-select on the portfolio board, one option per workspace
 
 PROJECT_ITEMS_QUERY = """
 query($projectId: ID!, $cursor: String) {
@@ -889,9 +889,9 @@ class ProjectBoard:
 
 def load_portfolio_board(metarepo_slug, dry_run):
     """The optional metarepo-wide portfolio board (root github-sync.yaml keys
-    portfolio: / portfolio_owner:) aggregating every project's issues, sliced
-    by a per-project option on its Project field. Returns None when not
-    configured — per-project behavior is then unchanged."""
+    portfolio: / portfolio_owner:) aggregating every workspace's issues, sliced
+    by a per-workspace option on its Project field. Returns None when not
+    configured — per-workspace behavior is then unchanged."""
     root = load_root_config()
     number = root.get("portfolio")
     if not number:
@@ -912,16 +912,16 @@ def load_portfolio_board(metarepo_slug, dry_run):
 
 
 class BoardSet:
-    """Fans one logical status write out to the per-project board and the
+    """Fans one logical status write out to the per-workspace board and the
     optional portfolio board, which additionally gets its Project field set
-    to the owning project so one org-wide board can be sliced per project."""
+    to the owning workspace so one org-wide board can be sliced per workspace."""
 
-    def __init__(self, project_board, portfolio_board, project_name):
+    def __init__(self, project_board, portfolio_board, workspace_name):
         self.project_board = project_board
         self.portfolio_board = portfolio_board
-        self.project_name = project_name
+        self.workspace_name = workspace_name
         if portfolio_board and portfolio_board.project_id:
-            portfolio_board.ensure_option(PROJECT_FIELD, project_name)
+            portfolio_board.ensure_option(PROJECT_FIELD, workspace_name)
 
     def set_status(self, repo, issue_number, issue_node_id, status_name):
         self.project_board.set_status(repo, issue_number, issue_node_id, status_name)
@@ -931,7 +931,7 @@ class BoardSet:
         portfolio.set_status(repo, issue_number, issue_node_id, status_name)
         if PROJECT_FIELD in portfolio.fields:
             portfolio.set_single_select(
-                repo, issue_number, issue_node_id, PROJECT_FIELD, self.project_name
+                repo, issue_number, issue_node_id, PROJECT_FIELD, self.workspace_name
             )
 
 
@@ -1008,12 +1008,12 @@ def add_sub_issue(repo, parent_issue, child_issue, dry_run):
     )
 
 
-def upsert_issue(repo, key, project_name, title, body_content, labels, issue_type,
+def upsert_issue(repo, key, workspace_name, title, body_content, labels, issue_type,
                  existing, parent, dry_run):
     """Create or update one synced issue; returns the issue dict (or None in
     dry-run create). Issues are (re-)linked under their parent on both create
     and update, so a parent change (newer PRD) reconciles the hierarchy."""
-    body = f"{build_marker(key, project_name)}\n\n{body_content}".strip()
+    body = f"{build_marker(key, workspace_name)}\n\n{body_content}".strip()
     issue = existing.get(key)
     if issue:
         update_issue_body(repo, issue, body, dry_run)
@@ -1036,23 +1036,23 @@ def effective_story_status(status, story_key, open_pr_keys):
     return project_status
 
 
-def sync_delivery(project_name, project_dir, config, board, dry_run):
+def sync_delivery(workspace_name, workspace_dir, config, board, dry_run):
     repo = config["repo"]
-    output_folder = resolve_output_folder(project_dir)
+    output_folder = resolve_output_folder(workspace_dir)
     sprint_path = (
-        project_dir / output_folder / "implementation-artifacts" / "sprint-status.yaml"
+        workspace_dir / output_folder / "implementation-artifacts" / "sprint-status.yaml"
     )
     sprint_data = read_yaml_file(sprint_path)
     if not sprint_data or not sprint_data.get("development_status"):
         info("No development_status in sprint-status.yaml yet — skipping delivery sync")
         return
 
-    planning_dir = project_dir / output_folder / "planning-artifacts"
-    implementation_dir = project_dir / output_folder / "implementation-artifacts"
+    planning_dir = workspace_dir / output_folder / "planning-artifacts"
+    implementation_dir = workspace_dir / output_folder / "implementation-artifacts"
     epic_docs, story_docs = parse_epics_doc(find_epics_doc(planning_dir))
     epics, stories = classify_development_status(sprint_data["development_status"])
 
-    project_title = sprint_data.get("project") or project_name
+    project_title = sprint_data.get("project") or workspace_name
     feature_label = config["labels"]["feature"]
     epic_label = config["labels"]["epic"]
     story_label = config["labels"]["story"]
@@ -1072,19 +1072,19 @@ def sync_delivery(project_name, project_dir, config, board, dry_run):
     if not issue_types:
         info("Org issue types unavailable — falling back to labels only")
 
-    existing = list_synced_issues(repo, DELIVERY_LABEL, project_name)
-    prs_by_key = list_story_branch_prs(load_source_repos(project_dir, config))
-    # Shared source repos can carry other projects' story branches — only
-    # this project's story keys matter here.
+    existing = list_synced_issues(repo, DELIVERY_LABEL, workspace_name)
+    prs_by_key = list_story_branch_prs(load_source_repos(workspace_dir, config))
+    # Shared source repos can carry other workspaces' story branches — only
+    # this workspace's story keys matter here.
     story_keys = {story["key"] for story in stories}
     prs_by_key = {key: prs for key, prs in prs_by_key.items() if key in story_keys}
     open_pr_keys = keys_with_open_prs(prs_by_key)
 
     root = upsert_issue(
-        repo, DELIVERY_ROOT_KEY, project_name,
+        repo, DELIVERY_ROOT_KEY, workspace_name,
         f"Delivery: {project_title}",
         f"Implementation progress for **{project_title}**, synced from "
-        f"`projects/{project_name}` by bmad-issues. Feature, epic, and story "
+        f"`workspaces/{workspace_name}` by bmad-issues. Feature, epic, and story "
         f"progress roll up automatically via sub-issues.",
         [DELIVERY_LABEL, epic_label], epic_type, existing, None, dry_run,
     )
@@ -1101,7 +1101,7 @@ def sync_delivery(project_name, project_dir, config, board, dry_run):
             else "Superseded by a newer PRD."
         )
         issue = upsert_issue(
-            repo, prd["key"], project_name,
+            repo, prd["key"], workspace_name,
             f"Feature: {prd['title']}",
             f"Mirrors the PRD at `{prd['path']}` (authoring status: {prd['status']}). {role}",
             [DELIVERY_LABEL, feature_label], feature_type, existing, root, dry_run,
@@ -1117,7 +1117,7 @@ def sync_delivery(project_name, project_dir, config, board, dry_run):
         doc = epic_docs.get(epic_num, {})
         title = doc.get("title") or f"Epic {epic_num}"
         epic_issues[epic_num] = upsert_issue(
-            repo, epic["key"], project_name,
+            repo, epic["key"], workspace_name,
             f"Epic {epic_num}: {title}",
             doc.get("goal") or f"_No epic goal found in epics.md for epic {epic_num}._",
             [DELIVERY_LABEL, epic_label], epic_type, existing, epic_parent, dry_run,
@@ -1137,7 +1137,7 @@ def sync_delivery(project_name, project_dir, config, board, dry_run):
         body += build_pr_section(prs_by_key.get(story["key"], []))
         parent = epic_issues.get(story["epic"]) or root
         issue = upsert_issue(
-            repo, story["key"], project_name,
+            repo, story["key"], workspace_name,
             f"Story {story_id}: {title}",
             body, [DELIVERY_LABEL, story_label], story_type, existing, parent, dry_run,
         )
@@ -1148,7 +1148,7 @@ def sync_delivery(project_name, project_dir, config, board, dry_run):
         set_issue_state(repo, issue, should_close=(story["status"] == "done"), dry_run=dry_run)
         board.set_status(repo, issue["number"], issue["node_id"], status)
 
-    close_orphans(repo, existing, prds, epics, stories, project_name, dry_run, board)
+    close_orphans(repo, existing, prds, epics, stories, workspace_name, dry_run, board)
     close_completed_epics(repo, epics, stories, epic_issues, board, dry_run)
     sync_feature_states(repo, prds, feature_issues, stories, board, dry_run)
 
@@ -1156,7 +1156,7 @@ def sync_delivery(project_name, project_dir, config, board, dry_run):
     ok(f"Delivery: {synced}/{len(stories)} stories, {len(epic_issues)} epics, {len(prds)} features → {repo}")
 
 
-def close_orphans(repo, existing, prds, epics, stories, project_name, dry_run, board):
+def close_orphans(repo, existing, prds, epics, stories, workspace_name, dry_run, board):
     """Keys that vanished from the artifacts (renumbered stories, removed PRD
     run folders) → close as not-planned + label, never delete."""
     live_keys = {DELIVERY_ROOT_KEY}
@@ -1243,10 +1243,10 @@ def close_completed_epics(repo, epics, stories, epic_issues, board, dry_run):
 # ── Planning sync ────────────────────────────────────────────────────────────
 
 
-def build_planning_body(project_name, docs):
+def build_planning_body(workspace_name, docs):
     lines = [
-        f"Planning artifact checklist for **{project_name}**, synced from "
-        f"`projects/{project_name}/.../planning-artifacts/` by bmad-issues.",
+        f"Planning artifact checklist for **{workspace_name}**, synced from "
+        f"`workspaces/{workspace_name}/.../planning-artifacts/` by bmad-issues.",
         "",
     ]
     for name, exists, required in docs:
@@ -1268,30 +1268,30 @@ def planning_status(docs, has_open_pr):
     return "Backlog", False
 
 
-def sync_planning(project_name, project_dir, config, board, metarepo_slug, dry_run):
+def sync_planning(workspace_name, workspace_dir, config, board, metarepo_slug, dry_run):
     if not config.get("planning", True):
         return
     if not metarepo_slug:
         warn("Cannot resolve the metarepo slug — skipping planning sync")
         return
 
-    output_folder = resolve_output_folder(project_dir)
-    planning_dir = project_dir / output_folder / "planning-artifacts"
+    output_folder = resolve_output_folder(workspace_dir)
+    planning_dir = workspace_dir / output_folder / "planning-artifacts"
     docs = detect_planning_docs(planning_dir)
 
     ensure_labels(metarepo_slug, [(PLANNING_LABEL, "BFD4F2"), (ORPHAN_LABEL, "D93F0B")], dry_run)
 
-    existing = list_synced_issues(metarepo_slug, PLANNING_LABEL, project_name)
+    existing = list_synced_issues(metarepo_slug, PLANNING_LABEL, workspace_name)
     issue = upsert_issue(
-        metarepo_slug, PLANNING_ROOT_KEY, project_name,
-        f"Planning: {project_name}",
-        build_planning_body(project_name, docs),
+        metarepo_slug, PLANNING_ROOT_KEY, workspace_name,
+        f"Planning: {workspace_name}",
+        build_planning_body(workspace_name, docs),
         [PLANNING_LABEL], None, existing, None, dry_run,
     )
     if not issue:
         return
 
-    open_pr = list_open_planning_prs(metarepo_slug, project_name)
+    open_pr = list_open_planning_prs(metarepo_slug, workspace_name)
     status, complete = planning_status(docs, bool(open_pr))
     set_issue_state(metarepo_slug, issue, should_close=complete, dry_run=dry_run)
     board.set_status(metarepo_slug, issue["number"], issue["node_id"], status)
@@ -1304,67 +1304,67 @@ def sync_planning(project_name, project_dir, config, board, metarepo_slug, dry_r
 _PORTFOLIO_UNSET = object()
 
 
-def sync_project(project_name, dry_run, portfolio=_PORTFOLIO_UNSET):
-    project_dir = PROJECTS_DIR / project_name
-    if not project_dir.is_dir():
-        die(f"Project '{project_name}' not found at {project_dir}")
+def sync_workspace(workspace_name, dry_run, portfolio=_PORTFOLIO_UNSET):
+    workspace_dir = WORKSPACES_DIR / workspace_name
+    if not workspace_dir.is_dir():
+        die(f"Project '{workspace_name}' not found at {workspace_dir}")
 
     metarepo_slug = get_metarepo_slug()
-    config = load_sync_config(project_dir, metarepo_slug)
+    config = load_sync_config(workspace_dir, metarepo_slug)
     if not config:
         warn(
-            f"{project_name}: cannot resolve an issues repo — skipping.\n"
+            f"{workspace_name}: cannot resolve an issues repo — skipping.\n"
             f"    Either push the metarepo to GitHub (issues default there), or set "
-            f"repo: in projects/{project_name}/github-sync.yaml"
+            f"repo: in workspaces/{workspace_name}/github-sync.yaml"
         )
         return
 
-    print(f"\nSyncing: {project_name} → {config['repo']}" + (" [dry-run]" if dry_run else ""))
+    print(f"\nSyncing: {workspace_name} → {config['repo']}" + (" [dry-run]" if dry_run else ""))
 
     if gh_rest(f"repos/{config['repo']}", check=False) is None:
         warn(
             f"Repo {config['repo']} is not accessible with this token — skipping "
-            f"{project_name}. Check the repo: value in github-sync.yaml and token permissions."
+            f"{workspace_name}. Check the repo: value in github-sync.yaml and token permissions."
         )
         return
 
     if not config.get("project"):
         warn(
             "No GitHub Project configured — issues sync without a board. "
-            f"Run the skill's bmad-github-bootstrap.sh {project_name}"
+            f"Run the skill's bmad-github-bootstrap.sh {workspace_name}"
         )
         board = ProjectBoard.null(dry_run)
     else:
         board = ProjectBoard(config["project_owner"], config["project"], dry_run)
 
-    # --all loads the portfolio board once and passes it in; single-project
+    # --all loads the portfolio board once and passes it in; single-workspace
     # runs resolve it here.
     if portfolio is _PORTFOLIO_UNSET:
         portfolio = load_portfolio_board(metarepo_slug, dry_run)
-    boards = BoardSet(board, portfolio, project_name)
+    boards = BoardSet(board, portfolio, workspace_name)
 
-    sync_planning(project_name, project_dir, config, boards, metarepo_slug, dry_run)
-    sync_delivery(project_name, project_dir, config, boards, dry_run)
+    sync_planning(workspace_name, workspace_dir, config, boards, metarepo_slug, dry_run)
+    sync_delivery(workspace_name, workspace_dir, config, boards, dry_run)
 
 
-def configured_projects():
-    if not PROJECTS_DIR.is_dir():
+def configured_workspaces():
+    if not WORKSPACES_DIR.is_dir():
         return []
     return sorted(
-        p.name for p in PROJECTS_DIR.iterdir()
+        p.name for p in WORKSPACES_DIR.iterdir()
         if p.is_dir() and (p / "github-sync.yaml").exists()
     )
 
 
-def cmd_status(project_name):
-    project_dir = PROJECTS_DIR / project_name
-    config = load_sync_config(project_dir, get_metarepo_slug())
-    output_folder = resolve_output_folder(project_dir)
+def cmd_status(workspace_name):
+    workspace_dir = WORKSPACES_DIR / workspace_name
+    config = load_sync_config(workspace_dir, get_metarepo_slug())
+    output_folder = resolve_output_folder(workspace_dir)
     sprint_data = read_yaml_file(
-        project_dir / output_folder / "implementation-artifacts" / "sprint-status.yaml"
+        workspace_dir / output_folder / "implementation-artifacts" / "sprint-status.yaml"
     )
 
-    print(f"\nProject: {project_name}")
+    print(f"\nProject: {workspace_name}")
     print(f"Config:  {'✓ repo=' + config['repo'] if config else '✗ github-sync.yaml missing or unset'}")
     if config:
         print(f"Board:   {'✓ project #' + str(config['project']) if config.get('project') else '✗ not bootstrapped'}")
@@ -1391,8 +1391,9 @@ def cmd_status(project_name):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument("command", nargs="?", default="sync", choices=["sync", "status"])
-    parser.add_argument("--project", "-p", help="Project name (default: active project)")
-    parser.add_argument("--all", action="store_true", help="Sync every configured project")
+    parser.add_argument("--workspace", "-w", "--project", "-p", dest="workspace",
+                        help="Workspace name (default: active workspace)")
+    parser.add_argument("--all", action="store_true", help="Sync every configured workspace")
     parser.add_argument("--dry-run", "-n", action="store_true")
     args = parser.parse_args()
 
@@ -1402,40 +1403,40 @@ def main():
             die("gh CLI not authenticated. Run: gh auth login")
 
     if args.command == "sync" and args.all:
-        projects = configured_projects()
-        if not projects:
-            die("No projects with github-sync.yaml found")
-        # The portfolio board aggregates every project — load it once, not
-        # once per project (its item prefetch is the biggest in the system).
+        workspaces = configured_workspaces()
+        if not workspaces:
+            die("No workspaces with github-sync.yaml found")
+        # The portfolio board aggregates every workspace — load it once, not
+        # once per workspace (its item prefetch is the biggest in the system).
         portfolio = load_portfolio_board(get_metarepo_slug(), args.dry_run)
-        # One broken project must not block the rest of the nightly sweep:
+        # One broken workspace must not block the rest of the nightly sweep:
         # catch its die()/crash, keep going, and fail the run at the end.
         failed = []
-        for project_name in projects:
+        for workspace_name in workspaces:
             try:
-                sync_project(project_name, args.dry_run, portfolio=portfolio)
+                sync_workspace(workspace_name, args.dry_run, portfolio=portfolio)
             except SystemExit as exc:
                 if exc.code in (0, None):
                     raise
-                failed.append(project_name)
+                failed.append(workspace_name)
             except Exception as exc:  # noqa: BLE001 — isolation boundary
-                warn(f"{project_name}: unexpected error: {exc}")
-                failed.append(project_name)
+                warn(f"{workspace_name}: unexpected error: {exc}")
+                failed.append(workspace_name)
         print()
         if failed:
-            warn(f"Synced {len(projects) - len(failed)}/{len(projects)} projects — failed: {', '.join(failed)}")
+            warn(f"Synced {len(workspaces) - len(failed)}/{len(workspaces)} workspaces — failed: {', '.join(failed)}")
             sys.exit(1)
-        ok(f"Synced {len(projects)} project(s)")
+        ok(f"Synced {len(workspaces)} workspace(s)")
         return
 
-    project = args.project or get_active_project()
-    if not project:
-        die("No active project. Run: meta-router switch <project>  or pass --project")
+    workspace = args.workspace or get_active_workspace()
+    if not workspace:
+        die("No active workspace. Run: meta-router switch <workspace>  or pass --workspace")
 
     if args.command == "status":
-        cmd_status(project)
+        cmd_status(workspace)
     else:
-        sync_project(project, args.dry_run)
+        sync_workspace(workspace, args.dry_run)
 
 
 if __name__ == "__main__":

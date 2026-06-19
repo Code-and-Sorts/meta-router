@@ -1,6 +1,6 @@
-# repos.yaml — source repositories for the "alpha" example project.
+# repos.yaml — source repositories for the "alpha" example workspace.
 #
-# alpha is a full-stack project, so it owns two repos. A single story can touch
+# alpha is a full-stack workspace, so it owns two repos. A single story can touch
 # one or both — its "## Affected Repos" section decides which worktrees get
 # created when the story is implemented.
 repos:

@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ─────────────────────────────────────────────────────────────────────────────
-# setup.sh — Bootstrap a BMad multi-workspace metarepo
-# ─────────────────────────────────────────────────────────────────────────────
-
 SETUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 RED='\033[0;31m'
@@ -25,9 +21,6 @@ step() { echo -e "\n${BOLD}[$1/$TOTAL_STEPS] $2${NC}"; }
 
 TOTAL_STEPS=10
 
-# Map an agent tool to its home directory (relative to the metarepo root). Skills
-# and shared knowledge live under it (skills/ and knowledge/). Kept in sync with
-# tool_dir_for_tool in skills/meta-router/scripts/meta-router.sh.
 tool_dir_for_tool() {
   case "$1" in
     claude-code)    echo ".claude" ;;
@@ -37,14 +30,8 @@ tool_dir_for_tool() {
   esac
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Parse args
-# ─────────────────────────────────────────────────────────────────────────────
-
 NONINTERACTIVE="${BMAD_SETUP_NONINTERACTIVE:-0}"
 
-# printf/cat (not echo -e) so the art's backslashes aren't escape-processed;
-# the quoted heredoc keeps the $$ runs from expanding.
 echo ""
 printf '%b' "$AMBER"
 cat <<'ART'
@@ -69,9 +56,6 @@ cat <<'ART'
 ART
 printf '%b' "$NC"
 
-# Resolve the target directory — the run's output, i.e. the folder the metarepo
-# is set up in. Precedence:
-#   positional arg  >  BMAD_SETUP_TARGET env  >  interactive prompt  >  current dir
 TARGET_INPUT="${1:-${BMAD_SETUP_TARGET:-}}"
 if [[ -z "$TARGET_INPUT" && "$NONINTERACTIVE" != 1 ]]; then
   echo ""
@@ -84,29 +68,12 @@ TARGET="$(cd "$TARGET_INPUT" && pwd)"
 echo -e "  ${DIM}Target: $TARGET${NC}"
 echo ""
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Step 1: Gather preferences
-# ─────────────────────────────────────────────────────────────────────────────
-
 step 1 "Configuration"
 
-# Non-interactive mode for CI / scripted installs. When BMAD_SETUP_NONINTERACTIVE=1,
-# every prompt is skipped and answers are sourced from environment variables:
-#   BMAD_SETUP_TARGET      directory to set up in  (default: current dir; the
-#                          positional arg, if given, still takes precedence)
-#   BMAD_OUTPUT_FOLDER     output folder name      (default: features)
-#   BMAD_DOCS_FOLDER       docs folder name        (default: docs)
-#   BMAD_SETUP_SKILL_LEVEL user skill level        (beginner|intermediate|expert; default: intermediate)
-#   BMAD_SETUP_TOOL        agent tool              (claude-code|github-copilot|codex; default: claude-code)
-#   BMAD_SETUP_WORKSPACES  comma-separated workspaces to create (default: none)
-#   BMAD_SETUP_GITHUB_SYNC y/n to enable the GitHub Issues + Projects sync
-#                          (default: n; BMAD_SETUP_ISSUES_SYNC still honored)
-#   BMAD_SETUP_VERBOSE     1 to stream the BMad installer output (default: hidden)
 if [[ "$NONINTERACTIVE" == 1 ]]; then
   info "Non-interactive mode (BMAD_SETUP_NONINTERACTIVE=1)"
 fi
 
-# Output folder name
 if [[ "$NONINTERACTIVE" == 1 ]]; then
   USER_OUTPUT_FOLDER="${BMAD_OUTPUT_FOLDER:-features}"
 else
@@ -118,7 +85,6 @@ else
   USER_OUTPUT_FOLDER="${USER_OUTPUT_FOLDER:-features}"
 fi
 
-# Validate folder name
 if [[ ! "$USER_OUTPUT_FOLDER" =~ ^[a-zA-Z0-9._-]+$ ]]; then
   die "Folder name must contain only letters, numbers, dots, hyphens, and underscores."
 fi
@@ -126,7 +92,6 @@ fi
 echo ""
 ok "Output folder: ${BOLD}$USER_OUTPUT_FOLDER${NC}"
 
-# Docs folder name
 if [[ "$NONINTERACTIVE" == 1 ]]; then
   USER_DOCS_FOLDER="${BMAD_DOCS_FOLDER:-docs}"
 else
@@ -144,7 +109,6 @@ fi
 
 ok "Docs folder: ${BOLD}$USER_DOCS_FOLDER${NC}"
 
-# BMad user skill level — controls how much agents explain concepts in chat
 if [[ "$NONINTERACTIVE" == 1 ]]; then
   USER_SKILL_LEVEL="${BMAD_SETUP_SKILL_LEVEL:-intermediate}"
 else
@@ -162,8 +126,6 @@ case "$USER_SKILL_LEVEL" in
 esac
 ok "Skill level: ${BOLD}$USER_SKILL_LEVEL${NC}"
 
-# Agent tool — determines which IDE/agent BMad integrates with and, in turn,
-# where agent skills live (each tool reads them from its own directory).
 if [[ "$NONINTERACTIVE" == 1 ]]; then
   AGENT_TOOL="${BMAD_SETUP_TOOL:-claude-code}"
 else
@@ -190,17 +152,12 @@ esac
 TOOL_DIR="$(tool_dir_for_tool "$AGENT_TOOL")"
 SKILLS_BASE="$TOOL_DIR/skills"
 KNOWLEDGE_BASE="$TOOL_DIR/knowledge"
-# The skill ships its scripts and templates; everything in the metarepo runs
-# them from the installed skill directory — there is no separate scripts/ copy.
-# setup.sh lives inside the skill's scripts/ dir, so the skill root is one
-# level up — works from a repo clone and from a gh-skill-installed copy alike.
 SKILL_SRC="$(cd "$SETUP_DIR/.." && pwd)"
 SKILL_HOME="$SKILLS_BASE/meta-router"
 ROUTER_CMD="$SKILL_HOME/scripts/meta-router.sh"
 BOOTSTRAP_CMD="$SKILL_HOME/scripts/bmad-github-bootstrap.sh"
 ok "Agent tool: ${BOLD}$AGENT_TOOL${NC} ${DIM}(skills: $SKILLS_BASE/, knowledge: $KNOWLEDGE_BASE/)${NC}"
 
-# Initial workspaces
 if [[ "$NONINTERACTIVE" == 1 ]]; then
   USER_WORKSPACES="${BMAD_SETUP_WORKSPACES:-}"
 else
@@ -212,12 +169,11 @@ else
   echo ""
 fi
 
-# Parse and validate workspace names
 WORKSPACES=()
 if [[ -n "$USER_WORKSPACES" ]]; then
   IFS=',' read -ra RAW_WORKSPACES <<< "$USER_WORKSPACES"
   for p in "${RAW_WORKSPACES[@]}"; do
-    p="$(echo "$p" | xargs)" # trim whitespace
+    p="$(echo "$p" | xargs)"
     if [[ -z "$p" ]]; then continue; fi
     if [[ ! "$p" =~ ^[a-zA-Z0-9_-]+$ ]]; then
       die "Invalid workspace name: '$p' (only letters, numbers, hyphens, underscores)"
@@ -227,14 +183,12 @@ if [[ -n "$USER_WORKSPACES" ]]; then
   if [[ "$NONINTERACTIVE" == 1 ]]; then
     ok "Workspaces: ${BOLD}${WORKSPACES[*]}${NC}"
   else
-    # The read prompt already echoed the typed names — just confirm the count.
     ok "${#WORKSPACES[@]} workspace(s) to create"
   fi
 else
   info "No initial workspaces — you can create them later with meta-router init"
 fi
 
-# GitHub sync (Issues + Projects)
 if [[ "$NONINTERACTIVE" == 1 ]]; then
   USER_GH_PROJECTS="${BMAD_SETUP_GITHUB_SYNC:-${BMAD_SETUP_ISSUES_SYNC:-n}}"
 else
@@ -258,10 +212,6 @@ else
   info "GitHub sync: skipped (you can add it later)"
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Step 2: Check prerequisites
-# ─────────────────────────────────────────────────────────────────────────────
-
 step 2 "Checking prerequisites"
 
 if command -v node &>/dev/null; then
@@ -283,8 +233,6 @@ else
   warn "git not found — repo won't be initialized"
 fi
 
-# gh is only needed locally for bmad-github-bootstrap.sh and manual sync runs;
-# the sync workflow itself runs on GitHub-hosted runners where gh is preinstalled.
 if [[ "$ENABLE_GH_PROJECTS" == true ]]; then
   if command -v gh &>/dev/null; then
     ok "gh $(gh --version | head -n1 | cut -d' ' -f3)"
@@ -292,10 +240,6 @@ if [[ "$ENABLE_GH_PROJECTS" == true ]]; then
     warn "gh CLI not found — needed locally for the skill's bmad-github-bootstrap.sh (https://cli.github.com)"
   fi
 fi
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Step 3: Initialize git repo if needed
-# ─────────────────────────────────────────────────────────────────────────────
 
 step 3 "Initializing repository"
 cd "$TARGET"
@@ -311,25 +255,14 @@ else
   fi
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Step 4: Install BMad if not present
-# ─────────────────────────────────────────────────────────────────────────────
-
 step 4 "Checking BMad installation"
 
 YAML_CFG="_bmad/bmm/config.yaml"
 
-# Read a bmm config value normalized for comparison: quotes and the
-# {project-root}/ prefix stripped, so installer-written and hand-written
-# forms compare equal.
 bmm_config_value() {
   sed -n "s|^[[:space:]]*$1[[:space:]]*:[[:space:]]*||p" "$YAML_CFG" 2>/dev/null | head -n1 | tr -d '"' | sed 's|^{project-root}/||'
 }
 
-# The folder config MUST be passed to the installer (--output-folder / --set):
-# it resolves those paths and bakes them into every generated skill file under
-# the tool dir, so patching config.yaml afterwards leaves the skills pointing
-# at the default _bmad-output/ and docs/ paths.
 BMAD_CONFIG_FLAGS=(
   --output-folder "$USER_OUTPUT_FOLDER"
   --set "bmm.planning_artifacts={project-root}/$USER_OUTPUT_FOLDER/planning-artifacts"
@@ -338,10 +271,6 @@ BMAD_CONFIG_FLAGS=(
   --set "bmm.user_skill_level=$USER_SKILL_LEVEL"
 )
 
-# The installer is chatty (npm warnings, banner boxes, per-skill lines), so its
-# output goes to a log unless BMAD_SETUP_VERBOSE=1; the log tail is shown on
-# failure so errors stay debuggable.
-# Template must end in Xs — BSD mktemp (macOS) rejects suffixes after them.
 BMAD_INSTALL_LOG="$(mktemp "${TMPDIR:-/tmp}/bmad-install.XXXXXX")"
 run_bmad_installer() {
   if [[ "${BMAD_SETUP_VERBOSE:-0}" == 1 ]]; then
@@ -359,11 +288,6 @@ print_install_log_tail() {
 
 if [[ ! -d "_bmad" ]]; then
   info "Installing BMad Method... ${DIM}(takes a minute — output hidden, set BMAD_SETUP_VERBOSE=1 to show)${NC}"
-  # Non-interactive install (BMad v6): --yes skips prompts where possible,
-  # --directory pins the target (the installer otherwise prompts for it on a TTY
-  # and stalls on non-TTY stdin), --modules picks the module set (core auto-added),
-  # --tools targets the IDE/agent integration (required for fresh --yes installs).
-  # Override the module/tool selection via BMAD_INSTALL_MODULES / BMAD_INSTALL_TOOLS.
   BMAD_INSTALL_MODULES="${BMAD_INSTALL_MODULES:-bmm}"
   BMAD_INSTALL_TOOLS="${BMAD_INSTALL_TOOLS:-$AGENT_TOOL}"
   if run_bmad_installer --yes --directory . \
@@ -381,8 +305,6 @@ elif [[ "$(bmm_config_value output_folder)" == "$USER_OUTPUT_FOLDER" &&
   ok "BMad core already installed with matching config"
 else
   info "Repointing existing BMad install at the chosen folders... ${DIM}(output hidden, set BMAD_SETUP_VERBOSE=1 to show)${NC}"
-  # --action update re-runs the installer over the existing install, which
-  # regenerates config.yaml AND the skill files that embed the resolved paths.
   if run_bmad_installer --yes --directory . --action update \
        "${BMAD_CONFIG_FLAGS[@]}"; then
     ok "BMad config updated: output_folder=$USER_OUTPUT_FOLDER, project_knowledge=$USER_DOCS_FOLDER, user_skill_level=$USER_SKILL_LEVEL"
@@ -392,7 +314,6 @@ else
   fi
 fi
 
-# Fallback config for the skeleton path where the installer couldn't run.
 if [[ ! -f "$YAML_CFG" ]]; then
   mkdir -p "$(dirname "$YAML_CFG")"
   cat > "$YAML_CFG" << YAML
@@ -405,8 +326,6 @@ YAML
   ok "Created config.yaml with custom folder names"
 fi
 
-# agent_tool is meta-router's own key — the BMad installer never writes it.
-# `sed -i.bak` is portable across GNU (Linux/CI) and BSD (macOS) sed.
 if grep -qE '^[[:space:]]*agent_tool[[:space:]]*:' "$YAML_CFG" 2>/dev/null; then
   sed -i.bak "s|^\([[:space:]]*agent_tool[[:space:]]*:\).*|\1 \"$AGENT_TOOL\"|" "$YAML_CFG" && rm -f "$YAML_CFG.bak"
 else
@@ -414,11 +333,6 @@ else
 fi
 ok "agent_tool=$AGENT_TOOL"
 
-# Remove installer-scaffolded output/docs dirs if empty (the router manages
-# them as symlinks to the active workspace). The installer creates the output
-# folder's artifact subdirs plus a docs/ dir even when project_knowledge points
-# elsewhere; _bmad-output covers installs that predate the folder overrides.
-# Match on files only (-type f) so a tree of empty dirs still counts as removable.
 for candidate in _bmad-output docs "$USER_OUTPUT_FOLDER" "$USER_DOCS_FOLDER"; do
   if [[ -d "$candidate" && ! -L "$candidate" ]]; then
     local_files=$(find "$candidate" -type f -not -name '.gitkeep' | head -1)
@@ -428,10 +342,6 @@ for candidate in _bmad-output docs "$USER_OUTPUT_FOLDER" "$USER_DOCS_FOLDER"; do
     fi
   fi
 done
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Step 5: Create directory structure
-# ─────────────────────────────────────────────────────────────────────────────
 
 step 5 "Creating directory structure"
 
@@ -443,14 +353,8 @@ ok "workspaces/"
 ok "$SKILLS_BASE/ (always-active skills)"
 ok "$KNOWLEDGE_BASE/ (shared across all workspaces)"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Step 6: Copy meta-router files
-# ─────────────────────────────────────────────────────────────────────────────
-
 step 6 "Installing meta-router"
 
-# The whole skill ships into the metarepo: SKILL.md plus the scripts and the
-# templates those scripts reference, so the skill directory is self-contained.
 if [[ -f "$SKILL_SRC/scripts/meta-router.sh" ]]; then
   mkdir -p "$SKILL_HOME"
   cp -R "$SKILL_SRC/." "$SKILL_HOME/"
@@ -460,14 +364,12 @@ else
   die "Cannot find meta-router.sh next to setup.sh (expected $SKILL_SRC/scripts/meta-router.sh)"
 fi
 
-# Install CI workflow so the metarepo lints its bundled shell scripts.
 if [[ -f "$SKILL_SRC/templates/.github/workflows/ci.yml" ]]; then
   mkdir -p .github/workflows
   cp "$SKILL_SRC/templates/.github/workflows/ci.yml" .github/workflows/ci.yml
   ok ".github/workflows/ci.yml"
 fi
 
-# Seed shared knowledge README
 if [[ ! -f "$KNOWLEDGE_BASE/README.md" ]]; then
   cat > "$KNOWLEDGE_BASE/README.md" << 'KNOWLEDGEMD'
 # Shared Knowledge
@@ -483,10 +385,6 @@ KNOWLEDGEMD
   ok "$KNOWLEDGE_BASE/README.md"
 fi
 
-# Seed the overall shared context — org-wide standards that apply to ALL
-# workspaces. Seeded once at metarepo creation (it's global, not per-workspace, so
-# the router's per-workspace scaffold never touches it). Guarded so re-running
-# setup never clobbers your edits.
 if [[ ! -f "$KNOWLEDGE_BASE/shared-context.md" ]]; then
   cat > "$KNOWLEDGE_BASE/shared-context.md" << 'SHAREDCTX'
 # Shared Context
@@ -534,8 +432,6 @@ SHAREDCTX
   ok "$KNOWLEDGE_BASE/shared-context.md"
 fi
 
-# Install BMad customization overrides that drive per-story git worktrees.
-# These hook the bmad-dev-story / bmad-create-story skills via _bmad/custom/.
 if [[ -d "$SKILL_SRC/templates/bmad-custom" && -d "_bmad" ]]; then
   mkdir -p _bmad/custom
   for f in bmad-dev-story.toml bmad-create-story.toml worktree-workflow.md; do
@@ -544,22 +440,11 @@ if [[ -d "$SKILL_SRC/templates/bmad-custom" && -d "_bmad" ]]; then
       ok "_bmad/custom/$f"
     fi
   done
-  # The bmad-custom TOMLs inject the shared context via a persistent_facts
-  # "file:" reference. The committed templates use a tool-agnostic
-  # __KNOWLEDGE_DIR__ placeholder; resolve it to the configured agent tool's
-  # knowledge dir so BMad loads the file from where setup actually seeded it.
-  # This runs on every setup invocation and rewrites whatever the placeholder
-  # currently resolves to (placeholder or a prior tool's dir), so re-running with
-  # a different agent tool repoints an already-installed override — not just the
-  # first install. Uses the portable `sed -i.bak` style used for config.yaml.
   for f in bmad-dev-story.toml bmad-create-story.toml; do
     if [[ -f "_bmad/custom/$f" ]] && grep -q "shared-context.md" "_bmad/custom/$f"; then
       sed -i.bak -E "s|file:\{project-root\}/[^\"]*shared-context.md|file:{project-root}/$KNOWLEDGE_BASE/shared-context.md|g" "_bmad/custom/$f" && rm -f "_bmad/custom/$f.bak"
     fi
   done
-  # Same idea for router invocations: the templates reference the router via a
-  # tool-agnostic __SKILLS_DIR__ placeholder; resolve it (or a prior tool's
-  # path) to the installed skill location.
   for f in bmad-dev-story.toml bmad-create-story.toml worktree-workflow.md; do
     if [[ -f "_bmad/custom/$f" ]] && grep -q 'meta-router.sh' "_bmad/custom/$f"; then
       sed -i.bak -E "s|bash [^\`[:space:]]*meta-router\.sh|bash $ROUTER_CMD|g" "_bmad/custom/$f" && rm -f "_bmad/custom/$f.bak"
@@ -567,17 +452,9 @@ if [[ -d "$SKILL_SRC/templates/bmad-custom" && -d "_bmad" ]]; then
   done
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Step 7: Install GitHub Issues sync (optional)
-# ─────────────────────────────────────────────────────────────────────────────
-
 step 7 "Installing GitHub sync files"
 
 if [[ "$ENABLE_GH_PROJECTS" == true ]]; then
-  # The sync + bootstrap scripts already ship inside the skill (step 6); only
-  # the metarepo-level workflow needs installing. Point it at the skill's copy
-  # of bmad-issues.py. (bmad-pr-ping.yml stays in the skill's templates — it
-  # gets installed into each workspace's SOURCE repos, not the metarepo.)
   if [[ -f "$SKILL_SRC/templates/.github/workflows/sync-issues.yml" ]]; then
     mkdir -p .github/workflows
     cp "$SKILL_SRC/templates/.github/workflows/sync-issues.yml" .github/workflows/
@@ -585,7 +462,6 @@ if [[ "$ENABLE_GH_PROJECTS" == true ]]; then
     ok ".github/workflows/sync-issues.yml"
   fi
 
-  # Copy sync config template into each workspace
   if [[ -f "$SKILL_SRC/templates/github-sync.yaml" ]]; then
     for workspace in "${WORKSPACES[@]}"; do
       if [[ -d "workspaces/$workspace" && ! -f "workspaces/$workspace/github-sync.yaml" ]]; then
@@ -598,10 +474,6 @@ if [[ "$ENABLE_GH_PROJECTS" == true ]]; then
 else
   info "Skipped — run setup again or copy templates/ manually to enable later"
 fi
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Step 8: Generate AGENTS.md and .gitignore
-# ─────────────────────────────────────────────────────────────────────────────
 
 step 8 "Generating AGENTS.md and .gitignore"
 
@@ -723,7 +595,6 @@ AGENTMD
   ok "AGENTS.md"
 fi
 
-# .gitignore
 if [[ -f ".gitignore" ]]; then
   if grep -q "# meta-router" .gitignore 2>/dev/null; then
     info ".gitignore already has meta-router rules"
@@ -792,13 +663,8 @@ GITIGNORE
   ok ".gitignore"
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Step 9: Create initial workspaces
-# ─────────────────────────────────────────────────────────────────────────────
-
 step 9 "Creating workspaces"
 
-# printf/cat (not echo -e) so the art's backslashes aren't escape-processed.
 printf '%b' "$AMBER"
 cat <<'ART'
 +   '             +           '                               .   .      |
@@ -827,9 +693,6 @@ printf '%b' "$NC"
 if [[ ${#WORKSPACES[@]} -eq 0 ]]; then
   info "No workspaces to create. Run: bash $ROUTER_CMD init <name>"
 else
-  # Scaffold without switching (and without the router's per-file chatter);
-  # switch once at the end — only the last switch matters. Router errors still
-  # surface on stderr.
   for workspace in "${WORKSPACES[@]}"; do
     info "Creating workspace: ${BOLD}$workspace${NC}"
     bash "$ROUTER_CMD" init "$workspace" --no-switch >/dev/null
@@ -840,14 +703,8 @@ else
   ok "Active workspace: ${BOLD}$LAST_WORKSPACE${NC}"
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Step 10: GitHub project boards (walkthrough)
-# ─────────────────────────────────────────────────────────────────────────────
-
 step 10 "GitHub project boards"
 
-# The bootstrap script owns the detailed instructions (view checklist, token,
-# pr-ping install) — setup just points at it.
 print_github_sync_next_steps() {
   echo ""
   info "To finish GitHub sync setup later:"
@@ -857,8 +714,6 @@ print_github_sync_next_steps() {
   echo -e "     ${DIM}Creates the private board(s) and prints the remaining manual steps.${NC}"
 }
 
-# Printed ONCE per setup run (the bootstrap script prints the same block when
-# run standalone; setup suppresses that per-workspace copy to avoid repetition).
 print_remaining_sync_setup() {
   echo ""
   echo -e "${BOLD}Remaining setup (once per org / per source repo):${NC}"
@@ -869,8 +724,6 @@ print_remaining_sync_setup() {
   echo -e "    set variable ${CYAN}BMAD_METAREPO${NC} and secret ${CYAN}BMAD_METAREPO_TOKEN${NC}"
 }
 
-# Every workspace in the metarepo is a candidate, not just ones created this
-# run — re-running setup offers board creation for existing workspaces too.
 CANDIDATE_WORKSPACES=()
 for sync_cfg in workspaces/*/github-sync.yaml; do
   [[ -f "$sync_cfg" ]] && CANDIDATE_WORKSPACES+=("$(basename "$(dirname "$sync_cfg")")")
@@ -888,10 +741,6 @@ elif ! command -v gh &>/dev/null || ! gh auth status &>/dev/null; then
   warn "gh CLI missing or not authenticated — boards can't be created from here"
   print_github_sync_next_steps
 elif [[ -z "$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)" ]]; then
-  # Fresh metarepos have no GitHub remote yet, so boards (whose issues live
-  # here) can't be created during setup — but the org project template doesn't
-  # need the push. Offer it now: the views are built once and every future
-  # board copies them.
   info "No GitHub remote yet — boards are created after you push this metarepo"
   echo ""
   echo -e "  The ${BOLD}org project template${NC} can be set up now though: build the board"
@@ -909,8 +758,6 @@ elif [[ -z "$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)
   esac
   print_github_sync_next_steps
 else
-  # Issues live in this metarepo unless a workspace's github-sync.yaml sets
-  # repo: to its own source repo.
   METAREPO_SLUG="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)"
 
   echo -e "  Each workspace gets a ${BOLD}private${NC} GitHub Project board, tracking issues that"
@@ -918,7 +765,6 @@ else
   echo -e "  metarepo. ${DIM}(Override per workspace via repo: in workspaces/<name>/github-sync.yaml)${NC}"
   echo ""
 
-  # Collect the workspaces that still need a board, then ask ONCE for the batch.
   PENDING_WORKSPACES=()
   for workspace in "${CANDIDATE_WORKSPACES[@]}"; do
     SYNC_CFG="workspaces/$workspace/github-sync.yaml"
@@ -953,8 +799,6 @@ else
     else
       BOOTSTRAPPED_ANY=false
       for workspace in "${PENDING_WORKSPACES[@]}"; do
-        # Suppress the bootstrap's per-run "Remaining setup" block; it is
-        # printed once for the whole batch below.
         if BMAD_BOOTSTRAP_SKIP_NEXT_STEPS=1 bash "$BOOTSTRAP_CMD" "$workspace"; then
           BOOTSTRAPPED_ANY=true
         else
@@ -970,12 +814,7 @@ else
   fi
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Done
-# ─────────────────────────────────────────────────────────────────────────────
-
 echo ""
-# printf/cat (not echo -e) so the art's backslashes aren't escape-processed.
 printf '%b' "$SPRING_GREEN"
 cat <<'ART'
  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\  /\_/\

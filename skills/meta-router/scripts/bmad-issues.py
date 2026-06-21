@@ -60,10 +60,6 @@ from pathlib import Path
 
 import yaml
 
-# This script ships inside the meta-router skill (<tool-home>/skills/meta-router/
-# scripts/), so its own location no longer marks the metarepo root. Run it from
-# the metarepo root — matching meta-router.sh / bmad-github-bootstrap.sh, and how
-# the sync workflow invokes it.
 REPO_ROOT = Path.cwd()
 WORKSPACES_DIR = REPO_ROOT / "workspaces"
 
@@ -104,9 +100,6 @@ CREATE_THROTTLE_SECONDS = float(os.environ.get("BMAD_SYNC_THROTTLE", "1.0"))
 WRITE_THROTTLE_SECONDS = float(os.environ.get("BMAD_SYNC_WRITE_THROTTLE", "0.25"))
 RETRY_LIMIT = int(os.environ.get("BMAD_SYNC_RETRIES", "3"))
 RETRY_BACKOFF_SECONDS = (10, 30, 60)
-# Plain HTTP 403s are everyday permission failures here (inaccessible repos,
-# restricted org APIs) and must fail fast — rate-limited 403s carry "rate
-# limit" text, which this matches.
 RATE_LIMIT_RE = re.compile(r"HTTP 429|rate limit|secondary rate", re.IGNORECASE)
 
 
@@ -127,7 +120,6 @@ def warn(msg):
     print(f"  ⚠ {msg}")
 
 
-# ── gh CLI layer ─────────────────────────────────────────────────────────────
 
 
 def run_gh(*args, check=True, input_text=None):
@@ -199,7 +191,6 @@ def gh_rest_paginated(path):
             return items
         return [items]
     except json.JSONDecodeError:
-        # --paginate concatenates arrays as ][ between pages on old gh versions
         merged = re.sub(r"\]\s*\[", ",", result.stdout)
         return json.loads(merged)
 
@@ -222,7 +213,6 @@ def gh_graphql(query, check=True, **variables):
         return None
 
 
-# ── Metarepo + workspace resolution ────────────────────────────────────────────
 
 
 def resolve_output_folder_name():
@@ -343,7 +333,6 @@ def load_source_repos(workspace_dir, config):
     return slugs
 
 
-# ── BMad v6 artifact parsing ─────────────────────────────────────────────────
 
 
 def classify_development_status(dev_map):
@@ -521,7 +510,6 @@ def detect_planning_docs(planning_dir):
     return results
 
 
-# ── GitHub state (rebuilt every run from markers) ────────────────────────────
 
 
 def build_marker(key, workspace_name):
@@ -633,7 +621,6 @@ def list_open_planning_prs(metarepo_slug, workspace_name, limit=20):
     return None
 
 
-# ── GitHub Projects v2 ───────────────────────────────────────────────────────
 
 PROJECT_QUERY = """
 query($owner: String!, $number: Int!) {
@@ -652,7 +639,7 @@ query($owner: String!, $number: Int!) {
 
 PROJECT_QUERY_USER = PROJECT_QUERY.replace("organization", "user")
 
-PROJECT_FIELD = "Project"  # single-select on the portfolio board, one option per workspace
+PROJECT_FIELD = "Project"
 
 PROJECT_ITEMS_QUERY = """
 query($projectId: ID!, $cursor: String) {
@@ -691,8 +678,8 @@ class ProjectBoard:
     def __init__(self, owner, number, dry_run):
         self.dry_run = dry_run
         self.project_id = None
-        self.fields = {}  # name -> {"id", "options": {name: {"id","color","description"}}}
-        self.items = {}   # (repo, issue number) -> {"item_id", "values": {field: option}}
+        self.fields = {}
+        self.items = {}
 
         data = gh_graphql(PROJECT_QUERY, check=False, owner=owner, number=int(number))
         container = (data or {}).get("data", {}).get("organization")
@@ -935,7 +922,6 @@ class BoardSet:
             )
 
 
-# ── Issue upsert ─────────────────────────────────────────────────────────────
 
 
 def create_issue(repo, title, body, labels, issue_type, dry_run):
@@ -996,9 +982,6 @@ def set_issue_state(repo, issue, should_close, dry_run, reason="completed"):
 
 
 def add_sub_issue(repo, parent_issue, child_issue, dry_run):
-    # replace_parent moves the child if it is already linked under an older
-    # parent (e.g. the epics moved to a newer PRD's feature issue); for an
-    # unlinked child it behaves like a plain add.
     if dry_run or not parent_issue or not child_issue:
         return
     gh_rest(
@@ -1026,7 +1009,6 @@ def upsert_issue(repo, key, workspace_name, title, body_content, labels, issue_t
     return issue
 
 
-# ── Delivery sync ────────────────────────────────────────────────────────────
 
 
 def effective_story_status(status, story_key, open_pr_keys):
@@ -1074,8 +1056,6 @@ def sync_delivery(workspace_name, workspace_dir, config, board, dry_run):
 
     existing = list_synced_issues(repo, DELIVERY_LABEL, workspace_name)
     prs_by_key = list_story_branch_prs(load_source_repos(workspace_dir, config))
-    # Shared source repos can carry other workspaces' story branches — only
-    # this workspace's story keys matter here.
     story_keys = {story["key"] for story in stories}
     prs_by_key = {key: prs for key, prs in prs_by_key.items() if key in story_keys}
     open_pr_keys = keys_with_open_prs(prs_by_key)
@@ -1089,8 +1069,6 @@ def sync_delivery(workspace_name, workspace_dir, config, board, dry_run):
         [DELIVERY_LABEL, epic_label], epic_type, existing, None, dry_run,
     )
 
-    # One Feature issue per PRD; the current PRD's feature holds the epics
-    # (epics.md is generated from it), so its progress bar = epics done.
     prds = find_prds(planning_dir)
     feature_issues = {}
     current_feature = None
@@ -1240,7 +1218,6 @@ def close_completed_epics(repo, epics, stories, epic_issues, board, dry_run):
             board.set_status(repo, issue["number"], issue["node_id"], status)
 
 
-# ── Planning sync ────────────────────────────────────────────────────────────
 
 
 def build_planning_body(workspace_name, docs):
@@ -1298,7 +1275,6 @@ def sync_planning(workspace_name, workspace_dir, config, board, metarepo_slug, d
     ok(f"Planning: {status} → {metarepo_slug}#{issue['number']}")
 
 
-# ── Commands ─────────────────────────────────────────────────────────────────
 
 
 _PORTFOLIO_UNSET = object()
@@ -1337,8 +1313,6 @@ def sync_workspace(workspace_name, dry_run, portfolio=_PORTFOLIO_UNSET):
     else:
         board = ProjectBoard(config["project_owner"], config["project"], dry_run)
 
-    # --all loads the portfolio board once and passes it in; single-workspace
-    # runs resolve it here.
     if portfolio is _PORTFOLIO_UNSET:
         portfolio = load_portfolio_board(metarepo_slug, dry_run)
     boards = BoardSet(board, portfolio, workspace_name)
@@ -1405,11 +1379,7 @@ def main():
         workspaces = configured_workspaces()
         if not workspaces:
             die("No workspaces with github-sync.yaml found")
-        # The portfolio board aggregates every workspace — load it once, not
-        # once per workspace (its item prefetch is the biggest in the system).
         portfolio = load_portfolio_board(get_metarepo_slug(), args.dry_run)
-        # One broken workspace must not block the rest of the nightly sweep:
-        # catch its die()/crash, keep going, and fail the run at the end.
         failed = []
         for workspace_name in workspaces:
             try:

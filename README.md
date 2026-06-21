@@ -16,6 +16,20 @@ BMad assumes one project per repo. If several workspaces share the same agents a
 
 Requirements: Node.js ≥ 20 (for BMad), git, bash. On Windows, set `core.symlinks=true` (WSL works out of the box).
 
+One-liner: fetch a tagged release and run setup, no clone needed. Pin a version with `META_ROUTER_REF`, or omit it to track the latest release:
+
+```bash
+# pinned to a tag (reproducible)
+curl -fsSL https://raw.githubusercontent.com/Code-and-Sorts/meta-router/v0.1.0/install.sh \
+  | META_ROUTER_REF=v0.1.0 bash -s -- my-metarepo
+
+# or track the latest release
+curl -fsSL https://raw.githubusercontent.com/Code-and-Sorts/meta-router/main/install.sh \
+  | bash -s -- my-metarepo
+```
+
+Anything after `--` is passed to setup, and the `BMAD_SETUP_*` [environment variables](docs/reference.md#setup-environment-variables) are honored, so this works non-interactively in CI too.
+
 Via the skill: install it, then ask your agent to set up a metarepo; the skill runs setup from wherever it's installed.
 
 ```bash

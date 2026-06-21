@@ -1391,8 +1391,7 @@ def cmd_status(workspace_name):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument("command", nargs="?", default="sync", choices=["sync", "status"])
-    parser.add_argument("--workspace", "-w", "--project", "-p", dest="workspace",
-                        help="Workspace name (default: active workspace)")
+    parser.add_argument("--workspace", "-w", help="Workspace name (default: active workspace)")
     parser.add_argument("--all", action="store_true", help="Sync every configured workspace")
     parser.add_argument("--dry-run", "-n", action="store_true")
     args = parser.parse_args()

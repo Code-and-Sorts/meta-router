@@ -90,7 +90,7 @@ BMAD_SETUP_NONINTERACTIVE=1 \
 | `BMAD_DOCS_FOLDER` | docs folder name | `docs` |
 | `BMAD_SETUP_SKILL_LEVEL` | `beginner`, `intermediate`, or `expert` | `intermediate` |
 | `BMAD_SETUP_TOOL` | `claude-code`, `github-copilot`, or `codex` | `claude-code` |
-| `BMAD_SETUP_WORKSPACES` | comma-separated workspaces to create (the old `BMAD_SETUP_PROJECTS` is still accepted) | none |
+| `BMAD_SETUP_WORKSPACES` | comma-separated workspaces to create | none |
 | `BMAD_SETUP_GITHUB_SYNC` | `y`/`n`, enable the GitHub sync (`BMAD_SETUP_ISSUES_SYNC` is also honored) | `n` |
 | `BMAD_SETUP_VERBOSE` | `1` streams the BMad installer output | hidden, logged to a temp file |
 
@@ -105,7 +105,7 @@ python .claude/skills/meta-router/scripts/bmad-issues.py [sync|status] [--worksp
 | Flag | Does |
 | --- | --- |
 | `sync` (default) / `status` | write issue state, or report it without writing |
-| `--workspace NAME`, `-w` | target a workspace (default: the active one); `--project`/`-p` still works as a hidden alias |
+| `--workspace NAME`, `-w` | target a workspace (default: the active one) |
 | `--all` | every configured workspace; one workspace's failure no longer stops the rest — failures are summarized at the end and the run exits 1 |
 | `--dry-run`, `-n` | print actions without writing |
 

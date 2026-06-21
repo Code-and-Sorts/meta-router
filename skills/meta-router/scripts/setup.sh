@@ -98,8 +98,7 @@ step 1 "Configuration"
 #   BMAD_DOCS_FOLDER       docs folder name        (default: docs)
 #   BMAD_SETUP_SKILL_LEVEL user skill level        (beginner|intermediate|expert; default: intermediate)
 #   BMAD_SETUP_TOOL        agent tool              (claude-code|github-copilot|codex; default: claude-code)
-#   BMAD_SETUP_WORKSPACES  comma-separated workspaces to create
-#                          (BMAD_SETUP_PROJECTS still honored; default: none)
+#   BMAD_SETUP_WORKSPACES  comma-separated workspaces to create (default: none)
 #   BMAD_SETUP_GITHUB_SYNC y/n to enable the GitHub Issues + Projects sync
 #                          (default: n; BMAD_SETUP_ISSUES_SYNC still honored)
 #   BMAD_SETUP_VERBOSE     1 to stream the BMad installer output (default: hidden)
@@ -203,7 +202,7 @@ ok "Agent tool: ${BOLD}$AGENT_TOOL${NC} ${DIM}(skills: $SKILLS_BASE/, knowledge:
 
 # Initial workspaces
 if [[ "$NONINTERACTIVE" == 1 ]]; then
-  USER_WORKSPACES="${BMAD_SETUP_WORKSPACES:-${BMAD_SETUP_PROJECTS:-}}"
+  USER_WORKSPACES="${BMAD_SETUP_WORKSPACES:-}"
 else
   echo ""
   echo -e "  Workspaces to create (comma-separated, or leave blank to skip):"

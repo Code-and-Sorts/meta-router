@@ -1,0 +1,8 @@
+# repos.yaml — source repositories for the "beta" example workspace.
+#
+# beta owns a single repo, so `worktree <story-id>` needs no repo argument — it
+# defaults to the sole repo.
+repos:
+  - name: cli
+    url: git@github.com:example-org/beta-cli.git
+    branch: main

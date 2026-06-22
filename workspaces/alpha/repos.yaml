@@ -1,0 +1,12 @@
+# repos.yaml — source repositories for the "alpha" example workspace.
+#
+# alpha is a full-stack workspace, so it owns two repos. A single story can touch
+# one or both — its "## Affected Repos" section decides which worktrees get
+# created when the story is implemented.
+repos:
+  - name: web
+    url: git@github.com:example-org/alpha-web.git
+    branch: main
+  - name: api
+    url: git@github.com:example-org/alpha-api.git
+    branch: main

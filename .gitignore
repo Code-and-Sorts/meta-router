@@ -1,0 +1,37 @@
+# ── BMad Metarepo ────────────────────────────────────────────────────────────
+
+# The output + docs symlinks at the repo root are COMMITTED (not listed here):
+# their target is the active workspace, so meta-router reads the active workspace
+# from the output symlink instead of a separate file. Switching repoints them,
+# which lands as a tracked change.
+
+# Root repos/implementation symlinks point at gitignored content, so they're
+# recreated on switch rather than committed.
+/repos
+/implementation
+
+# Source repo clones + per-story worktrees (each managed independently)
+workspaces/*/repos/
+workspaces/*/implementation/
+
+# Workspace skills symlink (recreated on switch)
+.claude/skills/workspace
+
+# Personal BMad customization overrides (team overrides are committed)
+_bmad/custom/*.user.toml
+
+# Node / BMad installer
+node_modules/
+
+# Python
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/

@@ -1,0 +1,37 @@
+# meta-router override for the BMad `bmad-dev-story` skill.
+#
+# Copied into _bmad/custom/bmad-dev-story.toml by setup.sh. This is a sparse,
+# committed (team-scope) override that merges over the skill's shipped
+# customize.toml. Per BMad merge rules, arrays here APPEND to the defaults and
+# scalars override. Personal tweaks go in _bmad/custom/bmad-dev-story.user.toml
+# (gitignored), which wins over this file.
+#
+# Purpose: before implementing a story, create an isolated git worktree for each
+# source repo the story touches, so a full-stack story (web + aggregator + service)
+# is developed across several repos without polluting a shared checkout.
+
+[workflow]
+
+# Pre-flight: derive the affected repos from the story and create worktrees.
+# meta-router routes the active workspace through root-level symlinks (repos/,
+# implementation/), so every path below is repo-root-relative — no need to know
+# the active workspace's name or its workspaces/<name>/ path.
+activation_steps_prepend = [
+  "Read the story's '## Affected Repos' section to get the list of source repos this story touches (names match entries in repos.yaml). If the section is absent or empty, fall back to every repo in repos.yaml only when there is exactly one repo; otherwise ask the user which repos the story touches.",
+  "Ensure each affected repo is cloned: run `bash .claude/skills/meta-router/scripts/meta-router.sh clone <repo>` for any not yet present under repos/.",
+  "Create the per-story worktrees: run `bash .claude/skills/meta-router/scripts/meta-router.sh worktree <story-id> <repo> [<repo> ...]` with every affected repo (or `--all`). <story-id> is ALWAYS the story's development_status key from sprint-status.yaml (e.g. 1-2-account-management) — the GitHub sync keys PR detection off the story/<story-id> branch name. This creates implementation/<story-id>/<repo>/ checked out on branch story/<story-id> for each repo.",
+  "Implement ALL code changes for this story inside those worktrees (implementation/<story-id>/<repo>/), never directly in repos/<repo>/. Commit on the story/<story-id> branch in each affected repo.",
+]
+
+# Load the full worktree workflow as static context for the whole run, plus the
+# metarepo's overall shared context — org-wide standards that apply to every
+# workspace, loaded alongside the active workspace's workspace-context.md. Its path is
+# tool-agnostic in the template; setup.sh resolves it to the configured agent
+# tool's knowledge dir (.claude/, .github/, .codex/, .agents/).
+persistent_facts = [
+  "file:{project-root}/_bmad/custom/worktree-workflow.md",
+  "file:{project-root}/.claude/knowledge/shared-context.md",
+]
+
+# Post-completion: remind the user the worktrees persist for review/PR.
+on_complete = "The per-story worktrees remain under implementation/<story-id>/ for review and PR creation. After the story's branches are merged, remove them with `bash .claude/skills/meta-router/scripts/meta-router.sh worktree-rm <story-id>`."

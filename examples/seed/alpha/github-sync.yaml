@@ -1,4 +1,4 @@
-# GitHub sync configuration for the "alpha" example project.
+# GitHub sync configuration for the "alpha" example workspace.
 #
 # For the live showcase, issues are created in this very repo so the feature is
 # testable end-to-end. In a real metarepo this would point at alpha's own source repo.

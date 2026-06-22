@@ -5,12 +5,12 @@ name: Generate example branch
 #                     run the metarepo's own CI, and force-push it to `example`.
 #   2. sync-issues  — after the branch is updated, run the issue sync (the same
 #                     bmad-issues.py the sync-issues Action uses) against the
-#                     example project, creating/updating real issues in this repo.
+#                     example workspace, creating/updating real issues in this repo.
 #                     Nothing is committed back — the sync rebuilds its key→issue
 #                     mapping from issue-body markers at runtime.
 #
 # Runs on every push to main, and on manual dispatch (Actions tab → Run workflow)
-# so you can refresh the example + its issues on demand and review the project.
+# so you can refresh the example + its issues on demand and review the workspace.
 #
 # No infinite loop: triggers only on pushes to `main` (and manual dispatch); both
 # jobs write to `example`, which never retriggers this workflow.
@@ -52,7 +52,7 @@ jobs:
           BMAD_SETUP_NONINTERACTIVE: '1'
           BMAD_OUTPUT_FOLDER: features
           BMAD_DOCS_FOLDER: docs
-          BMAD_SETUP_PROJECTS: 'alpha,beta'
+          BMAD_SETUP_WORKSPACES: 'alpha,beta'
           BMAD_SETUP_GITHUB_SYNC: 'y'
         run: |
           set -euxo pipefail
@@ -60,10 +60,10 @@ jobs:
           rm -rf "$GEN"
           # Runs the real `npx bmad-method install` (network, ~minutes).
           bash skills/meta-router/scripts/setup.sh "$GEN"
-          # Overlay curated seed content over the scaffolded projects.
+          # Overlay curated seed content over the scaffolded workspaces.
           for proj in alpha beta; do
             if [ -d "examples/seed/$proj" ]; then
-              cp -R "examples/seed/$proj/." "$GEN/projects/$proj/"
+              cp -R "examples/seed/$proj/." "$GEN/workspaces/$proj/"
             fi
           done
           # Overlay a filled-in overall shared context over the seeded template
@@ -72,7 +72,7 @@ jobs:
             cp -R "examples/seed/knowledge/." "$GEN/.claude/knowledge/"
           fi
 
-      - name: Run the example project's CI (shellcheck)
+      - name: Run the example workspace's CI (shellcheck)
         env:
           GEN_DIR: ${{ runner.temp }}/example-metarepo
         run: |
@@ -119,7 +119,7 @@ jobs:
           git add -A
           # repos/ and implementation/ are gitignored in a real metarepo; force-add
           # the placeholder READMEs so the structure is visible on the branch.
-          git add --force projects/*/repos/ projects/*/implementation/ || true
+          git add --force workspaces/*/repos/ workspaces/*/implementation/ || true
           git commit -qm "chore: regenerate example metarepo from ${GITHUB_SHA}"
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin example
@@ -155,4 +155,4 @@ jobs:
           # the key→issue mapping from those markers at runtime — nothing is
           # written back to the branch. No Project board is configured for the
           # demo, so the default GITHUB_TOKEN (issues: write) is sufficient.
-          python .claude/skills/meta-router/scripts/bmad-issues.py sync --project alpha
+          python .claude/skills/meta-router/scripts/bmad-issues.py sync --workspace alpha

@@ -10,35 +10,35 @@ bash .claude/skills/meta-router/scripts/meta-router.sh <command>
 
 | Command | Does |
 | --- | --- |
-| `init <name>` | scaffold and switch to a new project |
-| `switch <name>` | change the active project |
-| `list` | list projects (active marked, with skill counts) |
-| `current` | show active project and symlink targets |
+| `init <name>` | scaffold and switch to a new workspace |
+| `switch <name>` | change the active workspace |
+| `list` | list workspaces (active marked, with skill counts) |
+| `current` | show active workspace and symlink targets |
 | `config` | show resolved folders, agent tool, and where each came from |
 | `validate` | check symlinks, `AGENTS.md`, artifact dirs |
-| `repos` / `clone [repo]` | list / clone the project's source repos |
+| `repos` / `clone [repo]` | list / clone the workspace's source repos |
 | `worktree <story> [repo...]` | create per-story git worktree(s) |
 | `worktree list` | list story worktrees |
 | `worktree-rm <story>` | remove a story's worktrees |
 
-`list` marks the active project and counts each project's skills; `current` shows where the active project's symlinks point:
+`list` marks the active workspace and counts each workspace's skills; `current` shows where the active workspace's symlinks point:
 
 ```text
 $ bash .claude/skills/meta-router/scripts/meta-router.sh list
-Projects:  (output: features, docs: docs)
+Workspaces:  (output: features, docs: docs)
   ○ camera-app
   ● food-inventory (active)
 
 $ bash .claude/skills/meta-router/scripts/meta-router.sh current
-● Active project: food-inventory
-  output: features -> projects/food-inventory/features
-  docs:   docs -> projects/food-inventory/docs
-  repos:  repos -> projects/food-inventory/repos
-  impl:   implementation -> projects/food-inventory/implementation
-  skills: .claude/skills/project (0 skill(s))
+● Active workspace: food-inventory
+  output: features -> workspaces/food-inventory/features
+  docs:   docs -> workspaces/food-inventory/docs
+  repos:  repos -> workspaces/food-inventory/repos
+  impl:   implementation -> workspaces/food-inventory/implementation
+  skills: .claude/skills/workspace (0 skill(s))
 ```
 
-`validate` checks the symlinks, agent home, and the active project's artifact dirs:
+`validate` checks the symlinks, agent home, and the active workspace's artifact dirs:
 
 ```text
 $ bash .claude/skills/meta-router/scripts/meta-router.sh validate
@@ -46,17 +46,16 @@ Validating BMad metarepo...
   output: features | docs: docs | tool: claude-code (skills: .claude/skills/)
 
 ✓ _bmad/
-✓ projects/
+✓ workspaces/
 ✓ .claude/ (agent tool home)
 ✓ AGENTS.md
 ✓ .claude/knowledge/ (shared)
 ✓ .claude/knowledge/shared-context.md (shared context)
-✓ features symlink → projects/food-inventory/features (valid)
-✓ docs symlink → projects/food-inventory/docs (valid)
-✓ repos symlink → projects/food-inventory/repos (valid)
-✓ implementation symlink → projects/food-inventory/implementation (valid)
-✓ .claude/skills/project symlink (valid)
-✓ active-project.txt → food-inventory
+✓ features symlink → workspaces/food-inventory/features (valid)
+✓ docs symlink → workspaces/food-inventory/docs (valid)
+✓ repos symlink → workspaces/food-inventory/repos (valid)
+✓ implementation symlink → workspaces/food-inventory/implementation (valid)
+✓ .claude/skills/workspace symlink (valid)
 ...
 ✓ All checks passed.
 ```
@@ -80,7 +79,7 @@ Set `BMAD_SETUP_NONINTERACTIVE=1` to skip every prompt and answer from the envir
 ```bash
 BMAD_SETUP_NONINTERACTIVE=1 \
   BMAD_OUTPUT_FOLDER=features BMAD_DOCS_FOLDER=docs \
-  BMAD_SETUP_TOOL=claude-code BMAD_SETUP_PROJECTS=alpha,beta \
+  BMAD_SETUP_TOOL=claude-code BMAD_SETUP_WORKSPACES=alpha,beta \
   bash meta-router/skills/meta-router/scripts/setup.sh my-metarepo
 ```
 
@@ -91,7 +90,7 @@ BMAD_SETUP_NONINTERACTIVE=1 \
 | `BMAD_DOCS_FOLDER` | docs folder name | `docs` |
 | `BMAD_SETUP_SKILL_LEVEL` | `beginner`, `intermediate`, or `expert` | `intermediate` |
 | `BMAD_SETUP_TOOL` | `claude-code`, `github-copilot`, or `codex` | `claude-code` |
-| `BMAD_SETUP_PROJECTS` | comma-separated projects to create | none |
+| `BMAD_SETUP_WORKSPACES` | comma-separated workspaces to create | none |
 | `BMAD_SETUP_GITHUB_SYNC` | `y`/`n`, enable the GitHub sync (`BMAD_SETUP_ISSUES_SYNC` is also honored) | `n` |
 | `BMAD_SETUP_VERBOSE` | `1` streams the BMad installer output | hidden, logged to a temp file |
 
@@ -100,17 +99,17 @@ BMAD_SETUP_NONINTERACTIVE=1 \
 ## Issue sync CLI
 
 ```bash
-python .claude/skills/meta-router/scripts/bmad-issues.py [sync|status] [--project NAME] [--all] [--dry-run]
+python .claude/skills/meta-router/scripts/bmad-issues.py [sync|status] [--workspace NAME] [--all] [--dry-run]
 ```
 
 | Flag | Does |
 | --- | --- |
 | `sync` (default) / `status` | write issue state, or report it without writing |
-| `--project NAME`, `-p` | target a project (default: the active one) |
-| `--all` | every configured project; one project's failure no longer stops the rest — failures are summarized at the end and the run exits 1 |
+| `--workspace NAME`, `-w` | target a workspace (default: the active one) |
+| `--all` | every configured workspace; one workspace's failure no longer stops the rest — failures are summarized at the end and the run exits 1 |
 | `--dry-run`, `-n` | print actions without writing |
 
-For example, `python .claude/skills/meta-router/scripts/bmad-issues.py sync --all --dry-run` previews the sync for every configured project.
+For example, `python .claude/skills/meta-router/scripts/bmad-issues.py sync --all --dry-run` previews the sync for every configured workspace.
 
 Sync tuning environment variables:
 
@@ -145,7 +144,7 @@ meta-router/
 │           │   ├── bmad-dev-story.toml     # create per-story worktrees on implement
 │           │   ├── bmad-create-story.toml  # add "## Affected Repos" to stories
 │           │   └── worktree-workflow.md    # the worktree procedure (loaded as context)
-│           └── github-sync.yaml    #   per-project sync config template
+│           └── github-sync.yaml    #   per-workspace sync config template
 ├── examples/seed/                  # Seed content overlaid onto the example branch
 ├── .github/workflows/
 │   ├── ci.yml                      # pytest + shellcheck + skill validation (this repo)

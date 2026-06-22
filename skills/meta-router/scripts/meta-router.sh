@@ -1,49 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ─────────────────────────────────────────────────────────────────────────────
-# meta-router.sh — Multi-project context switcher for BMad metarepos
-# ─────────────────────────────────────────────────────────────────────────────
-# Manages five symlinks per project switch:
-#   1. Output folder      (features, PRDs, epics, stories)
-#   2. Project docs       (project_knowledge — ADRs, specs, domain docs)
-#   3. repos              (git clones of the project's source repos)
-#   4. implementation     (per-story git worktrees)
-#   5. Project skills     (agent skills specific to one project)
-#
-# Agent skills and shared knowledge live in the active tool's home directory
-# (.claude for Claude Code, .github for GitHub Copilot, .codex for Codex),
-# resolved from the agent_tool config value: <tool>/skills/ for skills and
-# <tool>/knowledge/ for shared knowledge, the latter always available.
-# ─────────────────────────────────────────────────────────────────────────────
-
-# The script lives inside the skill directory (<tool>/skills/meta-router/
-# scripts/), so its own location no longer marks the metarepo root — it runs
-# from the root instead, validated by check_metarepo (_bmad/ must exist).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(dirname "$SCRIPT_DIR")"
 REPO_ROOT="$(pwd)"
-# How this script and its sibling are invoked from the metarepo root, used in
-# seeded files and hints (e.g. ".claude/skills/meta-router/scripts/meta-router.sh").
 SKILL_DIR_REL="${SKILL_DIR#"$REPO_ROOT"/}"
 ROUTER_SELF="$SKILL_DIR_REL/scripts/meta-router.sh"
 BOOTSTRAP_SELF="$SKILL_DIR_REL/scripts/bmad-github-bootstrap.sh"
 
 BMAD_CORE="$REPO_ROOT/_bmad"
-PROJECTS_DIR="$REPO_ROOT/projects"
-ACTIVE_FILE="$REPO_ROOT/active-project.txt"
+WORKSPACES_DIR="$REPO_ROOT/workspaces"
+LEGACY_ACTIVE_FILE="$REPO_ROOT/active-project.txt"
 
-# Skills and shared knowledge live under the agent tool's home directory
-# (TOOL_DIR, e.g. ".claude"). The relative bases (SKILLS_BASE, KNOWLEDGE_BASE)
-# and absolute paths are resolved in check_metarepo from config; see
-# tool_dir_for_tool.
 TOOL_DIR=""
 SKILLS_BASE=""
 KNOWLEDGE_BASE=""
 SKILLS_DIR=""
-SKILLS_PROJECT_LINK=""
+SKILLS_WORKSPACE_LINK=""
 
-# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -56,10 +30,6 @@ die() { echo -e "${RED}error:${NC} $*" >&2; exit 1; }
 info() { echo -e "${CYAN}→${NC} $*"; }
 ok() { echo -e "${GREEN}✓${NC} $*"; }
 warn() { echo -e "${YELLOW}⚠${NC} $*"; }
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Config resolution
-# ─────────────────────────────────────────────────────────────────────────────
 
 read_yaml_key() {
   local file="$1" key="$2"
@@ -75,9 +45,6 @@ read_toml_key() {
   fi
 }
 
-# Parse repos.yaml into tab-separated "name<TAB>url<TAB>branch" lines (one per repo).
-# Skips comments, tolerates quotes, defaults branch to "main", and drops any entry
-# still holding a REPLACE_ME placeholder. No yq dependency.
 parse_repos_yaml() {
   local file="$1"
   [[ -f "$file" ]] || return 0
@@ -107,14 +74,12 @@ strip_project_root() {
 resolve_config_value() {
   local env_var="$1" yaml_key="$2" default="$3"
 
-  # 1. Env override
   local env_val="${!env_var:-}"
   if [[ -n "$env_val" ]]; then
     echo "$env_val"
     return
   fi
 
-  # 2. config.yaml
   local raw
   raw="$(read_yaml_key "$BMAD_CORE/bmm/config.yaml" "$yaml_key")"
   if [[ -n "$raw" ]]; then
@@ -122,7 +87,6 @@ resolve_config_value() {
     return
   fi
 
-  # 3. config.toml
   raw="$(read_toml_key "$BMAD_CORE/config.toml" "$yaml_key")"
   if [[ -n "$raw" ]]; then
     strip_project_root "$raw"
@@ -132,10 +96,6 @@ resolve_config_value() {
   echo "$default"
 }
 
-# Map the configured agent tool to its home directory, relative to the repo
-# root. Agent skills and shared knowledge live under this directory (skills/
-# and knowledge/). Each agent reads from a different conventional location; an
-# unrecognized tool falls back to the tool-agnostic .agents.
 tool_dir_for_tool() {
   case "$1" in
     claude-code)    echo ".claude" ;;
@@ -151,7 +111,7 @@ AGENT_TOOL=""
 
 check_metarepo() {
   [[ -d "$BMAD_CORE" ]] || die "Not in a BMad metarepo — _bmad/ directory not found at $REPO_ROOT"
-  [[ -d "$PROJECTS_DIR" ]] || die "No projects/ directory found at $REPO_ROOT"
+  [[ -d "$WORKSPACES_DIR" ]] || die "No workspaces/ directory found at $REPO_ROOT"
   OUTPUT_FOLDER_NAME="$(resolve_config_value BMAD_OUTPUT_FOLDER output_folder features)"
   DOCS_FOLDER_NAME="$(resolve_config_value BMAD_DOCS_FOLDER project_knowledge docs)"
   AGENT_TOOL="$(resolve_config_value BMAD_AGENT_TOOL agent_tool claude-code)"
@@ -159,34 +119,29 @@ check_metarepo() {
   SKILLS_BASE="$TOOL_DIR/skills"
   KNOWLEDGE_BASE="$TOOL_DIR/knowledge"
   SKILLS_DIR="$REPO_ROOT/$SKILLS_BASE"
-  SKILLS_PROJECT_LINK="$SKILLS_DIR/project"
+  SKILLS_WORKSPACE_LINK="$SKILLS_DIR/workspace"
 }
 
-# Computed paths
 symlink_path()    { echo "$REPO_ROOT/$OUTPUT_FOLDER_NAME"; }
 docs_symlink()    { echo "$REPO_ROOT/$DOCS_FOLDER_NAME"; }
 repos_symlink()   { echo "$REPO_ROOT/repos"; }
 impl_symlink()    { echo "$REPO_ROOT/implementation"; }
-project_output()     { echo "$PROJECTS_DIR/$1/$OUTPUT_FOLDER_NAME"; }
-project_docs()       { echo "$PROJECTS_DIR/$1/$DOCS_FOLDER_NAME"; }
-project_skills()     { echo "$PROJECTS_DIR/$1/$SKILLS_BASE"; }
-project_repos_yaml() { echo "$PROJECTS_DIR/$1/repos.yaml"; }
-project_repos_dir()  { echo "$PROJECTS_DIR/$1/repos"; }
-project_impl_dir()   { echo "$PROJECTS_DIR/$1/implementation"; }
+workspace_output()     { echo "$WORKSPACES_DIR/$1/$OUTPUT_FOLDER_NAME"; }
+workspace_docs()       { echo "$WORKSPACES_DIR/$1/$DOCS_FOLDER_NAME"; }
+workspace_skills()     { echo "$WORKSPACES_DIR/$1/$SKILLS_BASE"; }
+workspace_repos_yaml() { echo "$WORKSPACES_DIR/$1/repos.yaml"; }
+workspace_repos_dir()  { echo "$WORKSPACES_DIR/$1/repos"; }
+workspace_impl_dir()   { echo "$WORKSPACES_DIR/$1/implementation"; }
 
-get_active_project() {
-  if [[ -f "$ACTIVE_FILE" ]]; then
-    tr -d '[:space:]' < "$ACTIVE_FILE"
-  else
-    echo ""
-  fi
+get_active_workspace() {
+  get_symlink_target
 }
 
-require_active_project() {
+require_active_workspace() {
   local active
-  active="$(get_active_project)"
-  [[ -n "$active" ]] || die "No active project. Run: ${BOLD}meta-router switch <project>${NC}"
-  [[ -d "$PROJECTS_DIR/$active" ]] || die "Active project '$active' not found under projects/"
+  active="$(get_active_workspace)"
+  [[ -n "$active" ]] || die "No active workspace. Run: ${BOLD}meta-router switch <workspace>${NC}"
+  [[ -d "$WORKSPACES_DIR/$active" ]] || die "Active workspace '$active' not found under workspaces/"
   echo "$active"
 }
 
@@ -195,30 +150,29 @@ get_symlink_target() {
   sp="$(symlink_path)"
   if [[ -L "$sp" ]]; then
     local escaped_folder="${OUTPUT_FOLDER_NAME//./\\.}"
-    readlink "$sp" | sed "s|^projects/||" | sed "s|/${escaped_folder}$||"
+    readlink "$sp" | sed "s|^workspaces/||" | sed "s|/${escaped_folder}$||"
   else
     echo ""
   fi
 }
 
-list_projects() {
+list_workspaces() {
   local active
-  active="$(get_active_project)"
+  active="$(get_active_workspace)"
 
-  if [[ ! -d "$PROJECTS_DIR" ]] || [[ -z "$(ls -A "$PROJECTS_DIR" 2>/dev/null)" ]]; then
-    warn "No projects found. Run: ${BOLD}meta-router init <name>${NC}"
+  if [[ ! -d "$WORKSPACES_DIR" ]] || [[ -z "$(ls -A "$WORKSPACES_DIR" 2>/dev/null)" ]]; then
+    warn "No workspaces found. Run: ${BOLD}meta-router init <name>${NC}"
     return
   fi
 
-  echo -e "${BOLD}Projects:${NC}  ${DIM}(output: ${OUTPUT_FOLDER_NAME}, docs: ${DOCS_FOLDER_NAME})${NC}"
-  for dir in "$PROJECTS_DIR"/*/; do
+  echo -e "${BOLD}Workspaces:${NC}  ${DIM}(output: ${OUTPUT_FOLDER_NAME}, docs: ${DOCS_FOLDER_NAME})${NC}"
+  for dir in "$WORKSPACES_DIR"/*/; do
     [[ -d "$dir" ]] || continue
     local name
     name="$(basename "$dir")"
     local markers=""
-    # Skill count
     local pskills
-    pskills="$(project_skills "$name")"
+    pskills="$(workspace_skills "$name")"
     if [[ -d "$pskills" ]]; then
       local skill_count
       skill_count=$(find "$pskills" -name 'SKILL.md' 2>/dev/null | wc -l | tr -d '[:space:]')
@@ -234,47 +188,38 @@ list_projects() {
   done
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Scaffold
-# ─────────────────────────────────────────────────────────────────────────────
-
 scaffold_output() {
-  local project_name="$1"
+  local workspace_name="$1"
   local output_dir
-  output_dir="$(project_output "$project_name")"
+  output_dir="$(workspace_output "$workspace_name")"
   local docs_dir
-  docs_dir="$(project_docs "$project_name")"
+  docs_dir="$(workspace_docs "$workspace_name")"
   local skills_dir
-  skills_dir="$(project_skills "$project_name")"
+  skills_dir="$(workspace_skills "$workspace_name")"
   local repos_dir
-  repos_dir="$(project_repos_dir "$project_name")"
+  repos_dir="$(workspace_repos_dir "$workspace_name")"
   local impl_dir
-  impl_dir="$(project_impl_dir "$project_name")"
+  impl_dir="$(workspace_impl_dir "$workspace_name")"
 
-  # Output folder
   mkdir -p "$output_dir/planning-artifacts/epics"
   mkdir -p "$output_dir/implementation-artifacts"
 
-  # Docs folder
   mkdir -p "$docs_dir"
 
-  # Skills folder
   mkdir -p "$skills_dir"
 
-  # Source repos (clones) + per-story worktrees — both gitignored
   mkdir -p "$repos_dir"
   mkdir -p "$impl_dir"
 
-  # Seed project-context.md
-  if [[ ! -f "$output_dir/project-context.md" ]]; then
-    cat > "$output_dir/project-context.md" << 'TMPL'
-# Project Context
+  if [[ ! -f "$output_dir/workspace-context.md" ]]; then
+    cat > "$output_dir/workspace-context.md" << 'TMPL'
+# Workspace Context
 
-<!-- Generated by meta-router. Edit this file to capture your project's
+<!-- Generated by meta-router. Edit this file to capture your workspace's
      conventions, tech stack decisions, and implementation rules. BMad agents
      read this before every workflow. -->
 
-## Project Overview
+## Workspace Overview
 
 - **Name**: REPLACE_ME
 - **Description**: REPLACE_ME
@@ -292,11 +237,9 @@ scaffold_output() {
 
 <!-- Naming, folder structure, commit message format, etc. -->
 TMPL
-    info "Seeded project-context.md template"
+    info "Seeded workspace-context.md template"
   fi
 
-  # Seed sprint-status.yaml (BMad v6 shape — a flat development_status map,
-  # regenerated by the bmad-sprint-planning workflow)
   if [[ ! -f "$output_dir/implementation-artifacts/sprint-status.yaml" ]]; then
     cat > "$output_dir/implementation-artifacts/sprint-status.yaml" << 'TMPL'
 # Sprint Status — generated by the BMad sprint-planning workflow
@@ -304,44 +247,41 @@ development_status: {}
 TMPL
   fi
 
-  # Seed docs README
   if [[ -z "$(ls -A "$docs_dir" 2>/dev/null)" ]]; then
     cat > "$docs_dir/README.md" << TMPL
-# ${project_name} — Project Knowledge
+# ${workspace_name} — Project Knowledge
 
-Place project documentation here: ADRs, API specs, domain glossary,
+Place workspace documentation here: ADRs, API specs, domain glossary,
 onboarding guides, etc. BMad agents read this directory as project_knowledge.
 
-Shared knowledge that applies to all projects lives at \`${KNOWLEDGE_BASE}/\`.
+Shared knowledge that applies to all workspaces lives at \`${KNOWLEDGE_BASE}/\`.
 TMPL
   fi
 
-  # Seed skills README
   if [[ -z "$(ls -A "$skills_dir" 2>/dev/null)" ]]; then
     cat > "$skills_dir/README.md" << TMPL
-# Project Skills
+# Workspace Skills
 
 Place agent skill folders here. Each skill should be a directory with a
-SKILL.md file. These skills are only active when this project is the
+SKILL.md file. These skills are only active when this workspace is the
 active meta-router context.
 
 Example:
-  projects/${project_name}/${SKILLS_BASE}/
+  workspaces/${workspace_name}/${SKILLS_BASE}/
     my-api-skill/
       SKILL.md
 TMPL
   fi
 
-  # Seed repos.yaml — the tracked manifest of this project's source repos
-  if [[ ! -f "$(project_repos_yaml "$project_name")" ]]; then
-    cat > "$(project_repos_yaml "$project_name")" << 'TMPL'
-# repos.yaml — source repositories for this project.
+  if [[ ! -f "$(workspace_repos_yaml "$workspace_name")" ]]; then
+    cat > "$(workspace_repos_yaml "$workspace_name")" << 'TMPL'
+# repos.yaml — source repositories for this workspace.
 #
-# meta-router clones these into projects/<name>/repos/ (gitignored) and creates
-# per-story git worktrees under projects/<name>/implementation/<story-id>/<repo>/.
+# meta-router clones these into workspaces/<name>/repos/ (gitignored) and creates
+# per-story git worktrees under workspaces/<name>/implementation/<story-id>/<repo>/.
 #
 # A story may touch several repos (e.g. a full-stack story spanning a web app,
-# a GraphQL aggregator, and a backend service). List every repo the project owns;
+# a GraphQL aggregator, and a backend service). List every repo the workspace owns;
 # each story declares which subset it touches via its "## Affected Repos" section.
 #
 # Each entry needs: name (local clone dir), url (git remote), branch (default branch).
@@ -356,20 +296,18 @@ TMPL
     info "Seeded repos.yaml template"
   fi
 
-  # Seed github-sync.yaml — config for the GitHub Issues + Projects sync.
-  # Create the board with the skill's bmad-github-bootstrap.sh.
-  if [[ ! -f "$PROJECTS_DIR/$project_name/github-sync.yaml" ]]; then
-    cat > "$PROJECTS_DIR/$project_name/github-sync.yaml" << 'TMPL'
-# GitHub sync configuration for this project.
+  if [[ ! -f "$WORKSPACES_DIR/$workspace_name/github-sync.yaml" ]]; then
+    cat > "$WORKSPACES_DIR/$workspace_name/github-sync.yaml" << 'TMPL'
+# GitHub sync configuration for this workspace.
 # Used by the meta-router skill's bmad-issues.py and the sync-issues GitHub Action.
 
 # Optional: the GitHub repo where delivery issues (epics + stories) are
-# created. Defaults to the metarepo — set this only if you want a project's
+# created. Defaults to the metarepo — set this only if you want a workspace's
 # issues to live next to its code instead. The planning checklist issue is
 # always created in the metarepo.
 # repo: owner/repo
 
-# GitHub Project (v2) board for this project. Filled in by the skill's
+# GitHub Project (v2) board for this workspace. Filled in by the skill's
 # bmad-github-bootstrap.sh — leave null to sync issues without a board.
 # project_owner defaults to the owner of the issues repo.
 project: null
@@ -382,18 +320,17 @@ labels:
   epic: epic
   story: story
 
-# Set false to skip the "Planning: <project>" checklist issue in the metarepo.
+# Set false to skip the "Planning: <workspace>" checklist issue in the metarepo.
 planning: true
 TMPL
-    info "Seeded github-sync.yaml (create the board with bash $BOOTSTRAP_SELF $project_name)"
+    info "Seeded github-sync.yaml (create the board with bash $BOOTSTRAP_SELF $workspace_name)"
   fi
 
-  # Seed repos/ README
   if [[ -z "$(ls -A "$repos_dir" 2>/dev/null)" ]]; then
     cat > "$repos_dir/README.md" << 'TMPL'
 # repos/
 
-Git clones of this project's source repositories live here, one directory per
+Git clones of this workspace's source repositories live here, one directory per
 entry in `../repos.yaml`. This folder is gitignored — clones are managed
 independently of the metarepo.
 
@@ -406,7 +343,6 @@ TMPL
     sed -i.bak "s|__ROUTER__|$ROUTER_SELF|g" "$repos_dir/README.md" && rm -f "$repos_dir/README.md.bak"
   fi
 
-  # Seed implementation/ README
   if [[ -z "$(ls -A "$impl_dir" 2>/dev/null)" ]]; then
     cat > "$impl_dir/README.md" << 'TMPL'
 # implementation/
@@ -426,17 +362,12 @@ TMPL
     sed -i.bak "s|__ROUTER__|$ROUTER_SELF|g" "$impl_dir/README.md" && rm -f "$impl_dir/README.md.bak"
   fi
 
-  # .gitkeep for empty dirs
   for d in "$output_dir/planning-artifacts/epics" "$output_dir/implementation-artifacts"; do
     if [[ -z "$(ls -A "$d" 2>/dev/null)" ]]; then
       touch "$d/.gitkeep"
     fi
   done
 }
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Symlink management
-# ─────────────────────────────────────────────────────────────────────────────
 
 swap_symlink() {
   local link_path="$1" target="$2" label="$3"
@@ -451,95 +382,79 @@ swap_symlink() {
 }
 
 switch_all_symlinks() {
-  local project_name="$1"
+  local workspace_name="$1"
 
-  # Ensure every symlink target exists — on a fresh clone the gitignored
-  # repos/ and implementation/ dirs are absent and would leave dangling links.
   mkdir -p \
-    "$(project_output "$project_name")" \
-    "$(project_docs "$project_name")" \
-    "$(project_repos_dir "$project_name")" \
-    "$(project_impl_dir "$project_name")"
+    "$(workspace_output "$workspace_name")" \
+    "$(workspace_docs "$workspace_name")" \
+    "$(workspace_repos_dir "$workspace_name")" \
+    "$(workspace_impl_dir "$workspace_name")"
 
-  # Output folder
-  swap_symlink "$(symlink_path)" "projects/$project_name/$OUTPUT_FOLDER_NAME" "$OUTPUT_FOLDER_NAME"
+  swap_symlink "$(symlink_path)" "workspaces/$workspace_name/$OUTPUT_FOLDER_NAME" "$OUTPUT_FOLDER_NAME"
 
-  # Docs folder
-  swap_symlink "$(docs_symlink)" "projects/$project_name/$DOCS_FOLDER_NAME" "$DOCS_FOLDER_NAME"
+  swap_symlink "$(docs_symlink)" "workspaces/$workspace_name/$DOCS_FOLDER_NAME" "$DOCS_FOLDER_NAME"
 
-  # Source repos + per-story worktrees — routed at the root so the active
-  # project's clones/worktrees are reachable without a projects/<active>/ path.
-  swap_symlink "$(repos_symlink)" "projects/$project_name/repos" "repos"
-  swap_symlink "$(impl_symlink)" "projects/$project_name/implementation" "implementation"
+  swap_symlink "$(repos_symlink)" "workspaces/$workspace_name/repos" "repos"
+  swap_symlink "$(impl_symlink)" "workspaces/$workspace_name/implementation" "implementation"
 
-  # Skills
   mkdir -p "$SKILLS_DIR"
-  if [[ -L "$SKILLS_PROJECT_LINK" ]]; then
-    rm "$SKILLS_PROJECT_LINK"
-  elif [[ -e "$SKILLS_PROJECT_LINK" ]]; then
-    warn "$SKILLS_BASE/project is not a symlink — skipping skills switch"
+  if [[ -L "$SKILLS_WORKSPACE_LINK" ]]; then
+    rm "$SKILLS_WORKSPACE_LINK"
+  elif [[ -e "$SKILLS_WORKSPACE_LINK" ]]; then
+    warn "$SKILLS_BASE/workspace is not a symlink — skipping skills switch"
     return
   fi
-  if [[ -d "$(project_skills "$project_name")" ]]; then
-    ln -s "../../projects/$project_name/$SKILLS_BASE" "$SKILLS_PROJECT_LINK"
+  if [[ -d "$(workspace_skills "$workspace_name")" ]]; then
+    ln -s "../../workspaces/$workspace_name/$SKILLS_BASE" "$SKILLS_WORKSPACE_LINK"
   fi
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Commands
-# ─────────────────────────────────────────────────────────────────────────────
-
 cmd_switch() {
-  local project_name="${1:-}"
-  [[ -n "$project_name" ]] || die "Usage: meta-router switch <project-name>"
+  local workspace_name="${1:-}"
+  [[ -n "$workspace_name" ]] || die "Usage: meta-router switch <workspace-name>"
 
   local target_dir
-  target_dir="$(project_output "$project_name")"
+  target_dir="$(workspace_output "$workspace_name")"
 
-  if [[ ! -d "$PROJECTS_DIR/$project_name" ]]; then
-    warn "Project '$project_name' not found."
+  if [[ ! -d "$WORKSPACES_DIR/$workspace_name" ]]; then
+    warn "Workspace '$workspace_name' not found."
     echo ""
-    list_projects
+    list_workspaces
     echo ""
-    echo -e "To create it: ${BOLD}meta-router init $project_name${NC}"
+    echo -e "To create it: ${BOLD}meta-router init $workspace_name${NC}"
     exit 1
   fi
 
   if [[ ! -d "$target_dir" ]]; then
-    info "Scaffolding for '$project_name'..."
-    scaffold_output "$project_name"
+    info "Scaffolding for '$workspace_name'..."
+    scaffold_output "$workspace_name"
   fi
 
-  switch_all_symlinks "$project_name"
-  echo "$project_name" > "$ACTIVE_FILE"
+  switch_all_symlinks "$workspace_name"
+  rm -f "$LEGACY_ACTIVE_FILE"
 
-  ok "Switched to ${BOLD}$project_name${NC}"
+  ok "Switched to ${BOLD}$workspace_name${NC}"
 
-  # Report skills
   local skill_count
-  skill_count=$(find "$(project_skills "$project_name")" -name 'SKILL.md' 2>/dev/null | wc -l | tr -d '[:space:]')
+  skill_count=$(find "$(workspace_skills "$workspace_name")" -name 'SKILL.md' 2>/dev/null | wc -l | tr -d '[:space:]')
   if (( skill_count > 0 )); then
-    ok "$skill_count project skill(s) activated"
+    ok "$skill_count workspace skill(s) activated"
   fi
 
-  # Project context summary — only once it's been filled in. The freshly
-  # seeded template is all REPLACE_ME placeholders; previewing it on every
-  # init/switch is noise, so show a one-line nudge instead.
-  local ctx="$target_dir/project-context.md"
+  local ctx="$target_dir/workspace-context.md"
   if [[ -f "$ctx" ]] && grep -q "REPLACE_ME" "$ctx"; then
-    info "project-context.md not filled in yet — edit it so agents know this project's conventions"
+    info "workspace-context.md not filled in yet — edit it so agents know this workspace's conventions"
   elif [[ -f "$ctx" ]]; then
     local lines
     lines=$(wc -l < "$ctx")
     if (( lines > 5 )); then
       echo ""
-      echo -e "${DIM}── project-context.md ──${NC}"
+      echo -e "${DIM}── workspace-context.md ──${NC}"
       head -20 "$ctx" | sed 's/^/  /'
       if (( lines > 20 )); then echo -e "  ${DIM}... ($(( lines - 20 )) more lines)${NC}"; fi
     fi
   fi
 
-  # Artifact inventory
   echo ""
   echo -e "${DIM}── artifacts ──${NC}"
   local prd="$target_dir/planning-artifacts/PRD.md"
@@ -560,9 +475,8 @@ cmd_switch() {
 
   [[ -f "$sprint" ]] && ok "sprint-status.yaml" || echo -e "  ${DIM}○ sprint-status.yaml${NC}"
 
-  # Docs summary
   local docs_dir
-  docs_dir="$(project_docs "$project_name")"
+  docs_dir="$(workspace_docs "$workspace_name")"
   local doc_count
   doc_count=$(find "$docs_dir" -name '*.md' -not -name 'README.md' 2>/dev/null | wc -l | tr -d '[:space:]')
   if (( doc_count > 0 )); then
@@ -573,36 +487,21 @@ cmd_switch() {
 }
 
 cmd_list() {
-  list_projects
+  list_workspaces
 }
 
 cmd_current() {
   local active
-  active="$(get_active_project)"
-  local symlink_target
-  symlink_target="$(get_symlink_target)"
+  active="$(get_active_workspace)"
 
-  if [[ -z "$active" && -z "$symlink_target" ]]; then
-    warn "No active project. Run: ${BOLD}meta-router switch <project>${NC}"
+  if [[ -z "$active" ]]; then
+    warn "No active workspace. Run: ${BOLD}meta-router switch <workspace>${NC}"
     echo ""
-    list_projects
+    list_workspaces
     return
   fi
 
-  if [[ -n "$active" && -n "$symlink_target" && "$active" != "$symlink_target" ]]; then
-    warn "Mismatch: active-project.txt says '${active}' but symlink points to '${symlink_target}'"
-    info "Run ${BOLD}meta-router switch $active${NC} to fix."
-    return
-  fi
-
-  if [[ -n "$active" && -z "$symlink_target" ]]; then
-    warn "active-project.txt says '${active}' but no symlinks exist (fresh clone?)"
-    info "Run ${BOLD}meta-router switch $active${NC} to create them."
-    return
-  fi
-
-  local name="${active:-$symlink_target}"
-  echo -e "${GREEN}●${NC} Active project: ${BOLD}$name${NC}"
+  echo -e "${GREEN}●${NC} Active workspace: ${BOLD}$active${NC}"
 
   local sp
   sp="$(symlink_path)"
@@ -624,65 +523,57 @@ cmd_current() {
   is="$(impl_symlink)"
   [[ -L "$is" ]] && echo -e "  ${DIM}impl:   implementation -> $(readlink "$is")${NC}"
 
-  if [[ -L "$SKILLS_PROJECT_LINK" ]]; then
+  if [[ -L "$SKILLS_WORKSPACE_LINK" ]]; then
     local skill_count
-    # -L so find descends into the project symlink target (the start path is
-    # itself a symlink; without -L find won't enter it and counts 0).
-    skill_count=$(find -L "$SKILLS_PROJECT_LINK" -name 'SKILL.md' 2>/dev/null | wc -l | tr -d '[:space:]')
-    echo -e "  ${DIM}skills: $SKILLS_BASE/project ($skill_count skill(s))${NC}"
+    skill_count=$(find -L "$SKILLS_WORKSPACE_LINK" -name 'SKILL.md' 2>/dev/null | wc -l | tr -d '[:space:]')
+    echo -e "  ${DIM}skills: $SKILLS_BASE/workspace ($skill_count skill(s))${NC}"
   else
-    echo -e "  ${DIM}skills: no project-specific skills${NC}"
+    echo -e "  ${DIM}skills: no workspace-specific skills${NC}"
   fi
 }
 
 cmd_init() {
-  local project_name="${1:-}"
-  [[ -n "$project_name" ]] || die "Usage: meta-router init <project-name> [--no-switch]"
+  local workspace_name="${1:-}"
+  [[ -n "$workspace_name" ]] || die "Usage: meta-router init <workspace-name> [--no-switch]"
 
-  # --no-switch: scaffold only. Lets callers creating several projects (setup.sh)
-  # switch once at the end instead of after every init.
   local do_switch=true
   if [[ "${2:-}" == "--no-switch" ]]; then
     do_switch=false
   fi
 
-  if [[ ! "$project_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-    die "Project name must contain only letters, numbers, hyphens, and underscores."
+  if [[ ! "$workspace_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    die "Workspace name must contain only letters, numbers, hyphens, and underscores."
   fi
 
-  local project_dir="$PROJECTS_DIR/$project_name"
+  local workspace_dir="$WORKSPACES_DIR/$workspace_name"
   local output_dir
-  output_dir="$(project_output "$project_name")"
+  output_dir="$(workspace_output "$workspace_name")"
 
   if [[ -d "$output_dir" ]]; then
-    warn "Project '$project_name' already exists."
+    warn "Workspace '$workspace_name' already exists."
     if [[ "$do_switch" == true ]]; then
       info "Switching to it instead."
-      cmd_switch "$project_name"
+      cmd_switch "$workspace_name"
     fi
     return
   fi
 
-  info "Creating project: $project_name"
-  mkdir -p "$project_dir"
-  scaffold_output "$project_name"
+  info "Creating workspace: $workspace_name"
+  mkdir -p "$workspace_dir"
+  scaffold_output "$workspace_name"
 
-  ok "Scaffolded $project_dir/"
+  ok "Scaffolded $workspace_dir/"
 
   if [[ "$do_switch" == true ]]; then
-    cmd_switch "$project_name"
+    cmd_switch "$workspace_name"
   fi
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Source repos + per-story worktrees
-# ─────────────────────────────────────────────────────────────────────────────
-
 cmd_repos() {
   local active
-  active="$(require_active_project)"
+  active="$(require_active_workspace)"
   local yaml
-  yaml="$(project_repos_yaml "$active")"
+  yaml="$(workspace_repos_yaml "$active")"
   [[ -f "$yaml" ]] || die "No repos.yaml for '$active'. Run: ${BOLD}meta-router init $active${NC}"
 
   echo -e "${BOLD}Repos for $active:${NC}"
@@ -690,7 +581,7 @@ cmd_repos() {
   while IFS=$'\t' read -r name url branch; do
     [[ -n "$name" ]] || continue
     found=1
-    local clonedir; clonedir="$(project_repos_dir "$active")/$name"
+    local clonedir; clonedir="$(workspace_repos_dir "$active")/$name"
     if [[ -d "$clonedir/.git" ]]; then
       ok "$name ${DIM}($url @ $branch) [cloned]${NC}"
     else
@@ -698,15 +589,15 @@ cmd_repos() {
     fi
   done < <(parse_repos_yaml "$yaml")
 
-  (( found )) || warn "No repos configured (edit projects/$active/repos.yaml)"
+  (( found )) || warn "No repos configured (edit workspaces/$active/repos.yaml)"
 }
 
 cmd_clone() {
   local active
-  active="$(require_active_project)"
+  active="$(require_active_workspace)"
   local want="${1:-}"
   local yaml
-  yaml="$(project_repos_yaml "$active")"
+  yaml="$(workspace_repos_yaml "$active")"
   [[ -f "$yaml" ]] || die "No repos.yaml for '$active'"
   command -v git &>/dev/null || die "git not found"
 
@@ -715,7 +606,7 @@ cmd_clone() {
     [[ -n "$name" && -n "$url" ]] || continue
     [[ -n "$want" && "$want" != "$name" ]] && continue
     any=1
-    local dest; dest="$(project_repos_dir "$active")/$name"
+    local dest; dest="$(workspace_repos_dir "$active")/$name"
     if [[ -d "$dest/.git" ]]; then
       info "$name already cloned"
       continue
@@ -728,16 +619,15 @@ cmd_clone() {
   if [[ -n "$want" ]] && (( ! any )); then
     die "Repo '$want' not found in repos.yaml"
   fi
-  (( any )) || die "No repos configured to clone (edit projects/$active/repos.yaml)"
+  (( any )) || die "No repos configured to clone (edit workspaces/$active/repos.yaml)"
 }
 
-# Add a single worktree for one repo of a story.
 add_worktree() {
   local active="$1" repo="$2" story="$3"
-  local clonedir; clonedir="$(project_repos_dir "$active")/$repo"
+  local clonedir; clonedir="$(workspace_repos_dir "$active")/$repo"
   [[ -d "$clonedir/.git" ]] || die "Repo '$repo' not cloned. Run: ${BOLD}meta-router clone $repo${NC}"
 
-  local wt; wt="$(project_impl_dir "$active")/$story/$repo"
+  local wt; wt="$(workspace_impl_dir "$active")/$story/$repo"
   if [[ -e "$wt" ]]; then
     warn "worktree already exists: implementation/$story/$repo (skipping)"
     return 0
@@ -754,7 +644,6 @@ add_worktree() {
 }
 
 cmd_worktree() {
-  # `worktree list` shows active worktrees instead of creating one.
   if [[ "${1:-}" == "list" ]]; then
     shift
     cmd_worktree_list "$@"
@@ -762,7 +651,7 @@ cmd_worktree() {
   fi
 
   local active
-  active="$(require_active_project)"
+  active="$(require_active_workspace)"
 
   local story="" all=0
   local repos=()
@@ -780,10 +669,10 @@ cmd_worktree() {
   command -v git &>/dev/null || die "git not found"
 
   local yaml
-  yaml="$(project_repos_yaml "$active")"
+  yaml="$(workspace_repos_yaml "$active")"
   local names=()
   while IFS=$'\t' read -r n _u _b; do [[ -n "$n" ]] && names+=("$n"); done < <(parse_repos_yaml "$yaml")
-  (( ${#names[@]} > 0 )) || die "No repos configured for '$active' (edit projects/$active/repos.yaml)"
+  (( ${#names[@]} > 0 )) || die "No repos configured for '$active' (edit workspaces/$active/repos.yaml)"
 
   local targets=()
   if (( all )); then
@@ -796,7 +685,6 @@ cmd_worktree() {
     die "Multiple repos configured — specify which to use (or --all): ${names[*]}"
   fi
 
-  # Validate every requested repo is actually configured.
   local repo
   for repo in "${targets[@]}"; do
     printf '%s\n' "${names[@]}" | grep -qx "$repo" || die "Repo '$repo' not in repos.yaml (configured: ${names[*]})"
@@ -810,13 +698,13 @@ cmd_worktree() {
 
 cmd_worktree_rm() {
   local active
-  active="$(require_active_project)"
+  active="$(require_active_workspace)"
   local story="${1:-}"
   [[ -n "$story" ]] || die "Usage: meta-router worktree-rm <story-id>"
   [[ "$story" =~ ^[a-zA-Z0-9_.-]+$ ]] || die "Invalid story id: '$story'"
   command -v git &>/dev/null || die "git not found"
 
-  local story_dir; story_dir="$(project_impl_dir "$active")/$story"
+  local story_dir; story_dir="$(workspace_impl_dir "$active")/$story"
   [[ -d "$story_dir" ]] || die "No worktrees for story '$story' (implementation/$story not found)"
 
   local removed=0
@@ -824,7 +712,7 @@ cmd_worktree_rm() {
     [[ -d "$repo_path" ]] || continue
     local repo
     repo="$(basename "$repo_path")"
-    local clonedir; clonedir="$(project_repos_dir "$active")/$repo"
+    local clonedir; clonedir="$(workspace_repos_dir "$active")/$repo"
     if [[ -d "$clonedir/.git" ]]; then
       git -C "$clonedir" worktree remove --force "$repo_path" 2>/dev/null || rm -rf "$repo_path"
       git -C "$clonedir" worktree prune 2>/dev/null || true
@@ -841,8 +729,8 @@ cmd_worktree_rm() {
 
 cmd_worktree_list() {
   local active
-  active="$(require_active_project)"
-  local impl; impl="$(project_impl_dir "$active")"
+  active="$(require_active_workspace)"
+  local impl; impl="$(workspace_impl_dir "$active")"
 
   local printed=0
   if [[ -d "$impl" ]]; then
@@ -871,14 +759,12 @@ cmd_config() {
   echo -e "  docs folder:         ${GREEN}$DOCS_FOLDER_NAME${NC}"
   echo -e "  agent tool:          ${GREEN}$AGENT_TOOL${NC} ${DIM}(skills: $SKILLS_BASE/)${NC}"
 
-  # Overall shared context (org-wide, all projects)
   if [[ -f "$REPO_ROOT/$KNOWLEDGE_BASE/shared-context.md" ]]; then
     echo -e "  shared context:      ${GREEN}$KNOWLEDGE_BASE/shared-context.md${NC} ${DIM}(present)${NC}"
   else
     echo -e "  shared context:      ${DIM}$KNOWLEDGE_BASE/shared-context.md (not seeded)${NC}"
   fi
 
-  # Source for agent tool
   if [[ -n "${BMAD_AGENT_TOOL:-}" ]]; then
     echo -e "  tool source:         ${DIM}BMAD_AGENT_TOOL env var${NC}"
   elif [[ -f "$BMAD_CORE/bmm/config.yaml" ]] && grep -qE '^\s*agent_tool\s*:' "$BMAD_CORE/bmm/config.yaml" 2>/dev/null; then
@@ -887,7 +773,6 @@ cmd_config() {
     echo -e "  tool source:         ${DIM}default${NC}"
   fi
 
-  # Source for output folder
   if [[ -n "${BMAD_OUTPUT_FOLDER:-}" ]]; then
     echo -e "  output source:       ${DIM}BMAD_OUTPUT_FOLDER env var${NC}"
   elif [[ -f "$BMAD_CORE/bmm/config.yaml" ]] && grep -qE '^\s*output_folder\s*:' "$BMAD_CORE/bmm/config.yaml" 2>/dev/null; then
@@ -896,7 +781,6 @@ cmd_config() {
     echo -e "  output source:       ${DIM}default${NC}"
   fi
 
-  # Source for docs folder
   if [[ -n "${BMAD_DOCS_FOLDER:-}" ]]; then
     echo -e "  docs source:         ${DIM}BMAD_DOCS_FOLDER env var${NC}"
   elif [[ -f "$BMAD_CORE/bmm/config.yaml" ]] && grep -qE '^\s*project_knowledge\s*:' "$BMAD_CORE/bmm/config.yaml" 2>/dev/null; then
@@ -921,24 +805,24 @@ cmd_config() {
     echo -e "  docs symlink:        ${DIM}not set${NC}"
   fi
 
-  if [[ -L "$SKILLS_PROJECT_LINK" ]]; then
-    echo -e "  project skills:      ${DIM}$(readlink "$SKILLS_PROJECT_LINK")${NC}"
+  if [[ -L "$SKILLS_WORKSPACE_LINK" ]]; then
+    echo -e "  workspace skills:      ${DIM}$(readlink "$SKILLS_WORKSPACE_LINK")${NC}"
   else
-    echo -e "  project skills:      ${DIM}not linked${NC}"
+    echo -e "  workspace skills:      ${DIM}not linked${NC}"
   fi
 
   local active
-  active="$(get_active_project)"
-  echo -e "  active project:      ${DIM}${active:-none}${NC}"
+  active="$(get_active_workspace)"
+  echo -e "  active workspace:      ${DIM}${active:-none}${NC}"
 
   if [[ -n "$active" ]]; then
     local repos_yaml
-    repos_yaml="$(project_repos_yaml "$active")"
+    repos_yaml="$(workspace_repos_yaml "$active")"
     if [[ -f "$repos_yaml" ]]; then
       local cfg_count clone_count=0 rname
       cfg_count="$(parse_repos_yaml "$repos_yaml" | grep -c . || true)"
       while IFS=$'\t' read -r rname _ _; do
-        [[ -n "$rname" && -d "$(project_repos_dir "$active")/$rname/.git" ]] && clone_count=$((clone_count + 1))
+        [[ -n "$rname" && -d "$(workspace_repos_dir "$active")/$rname/.git" ]] && clone_count=$((clone_count + 1))
       done < <(parse_repos_yaml "$repos_yaml")
       echo -e "  configured repos:    ${DIM}${cfg_count:-0} (cloned: $clone_count)${NC}"
     fi
@@ -958,10 +842,10 @@ cmd_validate() {
     warn "_bmad/ missing"; errors=$((errors + 1))
   fi
 
-  if [[ -d "$PROJECTS_DIR" ]]; then
-    ok "projects/"
+  if [[ -d "$WORKSPACES_DIR" ]]; then
+    ok "workspaces/"
   else
-    warn "projects/ missing"; errors=$((errors + 1))
+    warn "workspaces/ missing"; errors=$((errors + 1))
   fi
 
   if [[ -d "$REPO_ROOT/$TOOL_DIR" ]]; then
@@ -976,23 +860,18 @@ cmd_validate() {
     warn "AGENTS.md missing"; errors=$((errors + 1))
   fi
 
-  # Shared knowledge
   if [[ -d "$REPO_ROOT/$KNOWLEDGE_BASE" ]]; then
     ok "$KNOWLEDGE_BASE/ (shared)"
   else
     info "$KNOWLEDGE_BASE/ not found (optional)"
   fi
 
-  # Overall shared context (org-wide, loaded before every workflow). Optional:
-  # seeded by setup.sh, so a metarepo that predates it (or wasn't bootstrapped
-  # by setup) simply hasn't got one yet — not an error.
   if [[ -f "$REPO_ROOT/$KNOWLEDGE_BASE/shared-context.md" ]]; then
     ok "$KNOWLEDGE_BASE/shared-context.md (shared context)"
   else
     info "$KNOWLEDGE_BASE/shared-context.md not found (run setup.sh to seed)"
   fi
 
-  # Output symlink
   local sp
   sp="$(symlink_path)"
   if [[ -L "$sp" ]]; then
@@ -1007,7 +886,6 @@ cmd_validate() {
     warn "$OUTPUT_FOLDER_NAME symlink missing"; errors=$((errors + 1))
   fi
 
-  # Docs symlink
   local ds
   ds="$(docs_symlink)"
   if [[ -L "$ds" ]]; then
@@ -1022,7 +900,6 @@ cmd_validate() {
     warn "$DOCS_FOLDER_NAME symlink missing"; errors=$((errors + 1))
   fi
 
-  # Root repos + implementation symlinks
   local root_link
   for root_link in "$(repos_symlink)" "$(impl_symlink)"; do
     local link_name
@@ -1040,39 +917,26 @@ cmd_validate() {
     fi
   done
 
-  # Skills symlink
-  if [[ -L "$SKILLS_PROJECT_LINK" ]]; then
-    if [[ -d "$SKILLS_PROJECT_LINK" ]]; then
-      ok "$SKILLS_BASE/project symlink (valid)"
+  if [[ -L "$SKILLS_WORKSPACE_LINK" ]]; then
+    if [[ -d "$SKILLS_WORKSPACE_LINK" ]]; then
+      ok "$SKILLS_BASE/workspace symlink (valid)"
     else
-      warn "$SKILLS_BASE/project symlink (BROKEN)"; errors=$((errors + 1))
+      warn "$SKILLS_BASE/workspace symlink (BROKEN)"; errors=$((errors + 1))
     fi
-  elif [[ -e "$SKILLS_PROJECT_LINK" ]]; then
-    warn "$SKILLS_BASE/project is not a symlink"; errors=$((errors + 1))
+  elif [[ -e "$SKILLS_WORKSPACE_LINK" ]]; then
+    warn "$SKILLS_BASE/workspace is not a symlink"; errors=$((errors + 1))
   else
-    info "$SKILLS_BASE/project not set (no project skills)"
+    info "$SKILLS_BASE/workspace not set (no workspace skills)"
   fi
 
-  # active-project.txt
   local active
-  active="$(get_active_project)"
-  if [[ -n "$active" ]]; then
-    ok "active-project.txt → $active"
-    local sym_target
-    sym_target="$(get_symlink_target)"
-    if [[ -n "$sym_target" && "$active" != "$sym_target" ]]; then
-      warn "Mismatch: active-project.txt='$active' vs symlink='$sym_target'"; errors=$((errors + 1))
-    fi
-  else
-    warn "active-project.txt missing or empty"; errors=$((errors + 1))
-  fi
+  active="$(get_active_workspace)"
 
-  # Active project artifacts
   local out
-  out="$(project_output "$active")"
+  out="$(workspace_output "$active")"
   if [[ -n "$active" && -d "$out" ]]; then
     echo ""
-    echo -e "${BOLD}Active project artifacts ($active):${NC}"
+    echo -e "${BOLD}Active workspace artifacts ($active):${NC}"
 
     if [[ -d "$out/planning-artifacts" ]]; then
       ok "planning-artifacts/"
@@ -1092,28 +956,25 @@ cmd_validate() {
       warn "implementation-artifacts/ missing"
     fi
 
-    if [[ -f "$out/project-context.md" ]]; then
-      ok "project-context.md"
+    if [[ -f "$out/workspace-context.md" ]]; then
+      ok "workspace-context.md"
     else
-      warn "project-context.md missing"
+      warn "workspace-context.md missing"
     fi
 
-    # GitHub sync config (optional feature — informational only). Issues
-    # default to the metarepo; repo: overrides per project.
-    local sync_yaml="$PROJECTS_DIR/$active/github-sync.yaml"
+    local sync_yaml="$WORKSPACES_DIR/$active/github-sync.yaml"
     if [[ ! -f "$sync_yaml" ]]; then
-      info "github-sync.yaml not found (GitHub sync disabled for this project)"
+      info "github-sync.yaml not found (GitHub sync disabled for this workspace)"
     elif grep -qE '^project:[[:space:]]*[0-9]+' "$sync_yaml"; then
       ok "github-sync.yaml (project board configured)"
     else
       info "github-sync.yaml present, board not created — run bash $BOOTSTRAP_SELF $active"
     fi
 
-    # Source repos + worktrees (clones/worktrees are gitignored — absence is not an error)
     local repos_yaml repos_dir impl_dir
-    repos_yaml="$(project_repos_yaml "$active")"
-    repos_dir="$(project_repos_dir "$active")"
-    impl_dir="$(project_impl_dir "$active")"
+    repos_yaml="$(workspace_repos_yaml "$active")"
+    repos_dir="$(workspace_repos_dir "$active")"
+    impl_dir="$(workspace_impl_dir "$active")"
     if [[ -f "$repos_yaml" ]]; then ok "repos.yaml"; else info "repos.yaml not found (optional)"; fi
     if [[ -d "$repos_dir" ]]; then ok "repos/ (gitignored)"; else info "repos/ not found (optional)"; fi
     if [[ -d "$impl_dir" ]]; then ok "implementation/ (gitignored)"; else info "implementation/ not found (optional)"; fi
@@ -1140,19 +1001,19 @@ cmd_validate() {
 cmd_help() {
   cat << EOF
 
-  meta-router — Multi-project context switcher for BMad metarepos
+  meta-router — Multi-workspace context switcher for BMad metarepos
 
   USAGE
     meta-router <command> [args]
 
   COMMANDS
-    switch <project>            Switch active project (output + docs + repos + implementation + skills)
-    list                        List all projects (with skill counts)
-    current                     Show currently active project
-    init <project> [--no-switch]  Scaffold a new project (and switch to it unless --no-switch)
+    switch <workspace>            Switch active workspace (output + docs + repos + implementation + skills)
+    list                        List all workspaces (with skill counts)
+    current                     Show currently active workspace
+    init <workspace> [--no-switch]  Scaffold a new workspace (and switch to it unless --no-switch)
     config                      Show resolved configuration
     validate                    Check metarepo health
-    repos                       List the active project's source repos
+    repos                       List the active workspace's source repos
     clone [repo]                Clone repos.yaml entries into repos/
     worktree <story> [repo...]  Create per-story worktree(s) (one per repo)
     worktree <story> --all      Create a worktree for every configured repo
@@ -1160,14 +1021,14 @@ cmd_help() {
     worktree-rm <story>         Remove all worktrees for a story
 
   SYMLINKS MANAGED
-    <output-folder>            → projects/<active>/<output-folder>
-    <docs-folder>              → projects/<active>/<docs-folder>
-    repos                      → projects/<active>/repos
-    implementation             → projects/<active>/implementation
-    $SKILLS_BASE/project   → projects/<active>/$SKILLS_BASE
+    <output-folder>            → workspaces/<active>/<output-folder>
+    <docs-folder>              → workspaces/<active>/<docs-folder>
+    repos                      → workspaces/<active>/repos
+    implementation             → workspaces/<active>/implementation
+    $SKILLS_BASE/workspace   → workspaces/<active>/$SKILLS_BASE
 
   SOURCE REPOS + WORKTREES
-    repos.yaml                 Tracked manifest of the project's source repos
+    repos.yaml                 Tracked manifest of the workspace's source repos
     repos/<name>/              Git clone of each repo (gitignored)
     implementation/<story>/<repo>/   Per-story worktree on branch story/<story> (gitignored)
 
@@ -1184,7 +1045,7 @@ cmd_help() {
     meta-router clone
     meta-router worktree STORY-001 web api      # full-stack story across two repos
     meta-router worktree-rm STORY-001
-    BMAD_OUTPUT_FOLDER=specs meta-router init my-project
+    BMAD_OUTPUT_FOLDER=specs meta-router init my-workspace
 
 EOF
 }

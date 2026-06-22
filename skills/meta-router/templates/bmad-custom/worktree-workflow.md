@@ -7,25 +7,25 @@ implementing any BMad story.
 
 ## Layout
 
-meta-router routes the **active** project through root-level symlinks, so you work
-from repo-root-relative paths and never need the `projects/<name>/` path:
+meta-router routes the **active** workspace through root-level symlinks, so you work
+from repo-root-relative paths and never need the `workspaces/<name>/` path:
 
 ```
 <metarepo root>/
-├── repos.yaml -> projects/<active>/repos.yaml is NOT symlinked; use
+├── repos.yaml -> workspaces/<active>/repos.yaml is NOT symlinked; use
 │                 `bash __SKILLS_DIR__/meta-router/scripts/meta-router.sh repos` to list configured repos
-├── repos/            -> projects/<active>/repos/            (git clones, gitignored)
+├── repos/            -> workspaces/<active>/repos/            (git clones, gitignored)
 │   ├── web/
 │   ├── gql-aggregator/
 │   └── api/
-└── implementation/   -> projects/<active>/implementation/   (worktrees, gitignored)
+└── implementation/   -> workspaces/<active>/implementation/   (worktrees, gitignored)
     └── <story-id>/
         ├── web/              # worktree on branch story/<story-id>
         ├── gql-aggregator/   # worktree on branch story/<story-id>
         └── api/              # worktree on branch story/<story-id>
 ```
 
-- The project's repo manifest is `repos.yaml`; list it with
+- The workspace's repo manifest is `repos.yaml`; list it with
   `bash __SKILLS_DIR__/meta-router/scripts/meta-router.sh repos`. Each entry has `name`, `url`, `branch`.
 - `repos/<name>/` is a full clone, created by `clone`. Never edit code here.
 - `implementation/<story-id>/<name>/` is an isolated worktree off the matching
@@ -72,8 +72,8 @@ repo.
 
 ## Notes
 
-- `repos/` and `implementation/` are root symlinks to the active project; they
-  repoint automatically when you `bash __SKILLS_DIR__/meta-router/scripts/meta-router.sh switch <project>`.
+- `repos/` and `implementation/` are root symlinks to the active workspace; they
+  repoint automatically when you `bash __SKILLS_DIR__/meta-router/scripts/meta-router.sh switch <workspace>`.
 - Worktrees and clones are gitignored — the metarepo tracks planning artifacts
   and `repos.yaml`, not source code.
 - The branch name is always `story/<story-id>`; re-running `worktree` for an

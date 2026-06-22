@@ -1,13 +1,13 @@
 # Shared Context
 
-<!-- Read by BMad agents before every workflow, for every project, alongside the
-     active project's project-context.md. Project context wins on conflict. -->
+<!-- Read by BMad agents before every workflow, for every workspace, alongside the
+     active workspace's workspace-context.md. Workspace context wins on conflict. -->
 
 ## Overview
 
 - **Organization / Team**: Acme Apps
 - **Mission**: Ship small, well-tested full-stack products that share one BMad core.
-- **Scope**: Conventions here apply to every project under projects/ (alpha, beta, ...).
+- **Scope**: Conventions here apply to every workspace under workspaces/ (alpha, beta, ...).
 
 ## Org-wide Tech Standards
 
@@ -31,5 +31,5 @@
 
 ## Precedence
 
-Project-specific guidance in features/project-context.md overrides this file when
-the two conflict. This file is the default for anything a project does not specify.
+Workspace-specific guidance in features/workspace-context.md overrides this file when
+the two conflict. This file is the default for anything a workspace does not specify.

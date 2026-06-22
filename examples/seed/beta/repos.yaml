@@ -1,4 +1,4 @@
-# repos.yaml — source repositories for the "beta" example project.
+# repos.yaml — source repositories for the "beta" example workspace.
 #
 # beta owns a single repo, so `worktree <story-id>` needs no repo argument — it
 # defaults to the sole repo.

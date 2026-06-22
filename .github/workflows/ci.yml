@@ -54,3 +54,61 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh skill publish --dry-run
+
+  install-smoke:
+    name: install.sh curl smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Resolve commit to install
+        id: src
+        env:
+          PR_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          DEFAULT_REPO: ${{ github.repository }}
+          DEFAULT_SHA: ${{ github.sha }}
+        run: |
+          {
+            echo "repo=${PR_REPO:-$DEFAULT_REPO}"
+            echo "sha=${PR_SHA:-$DEFAULT_SHA}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run the real curl | bash one-liner (pinned to this commit)
+        env:
+          REPO: ${{ steps.src.outputs.repo }}
+          SHA: ${{ steps.src.outputs.sha }}
+        run: |
+          set -euxo pipefail
+          TARGET="$RUNNER_TEMP/smoke-metarepo"
+          # Pre-seed a matching _bmad config so setup.sh takes its "already
+          # installed" path and skips `npx bmad-method install`. The full BMad
+          # install is covered by generate-example.yml; this job smoke-tests the
+          # install.sh download → unpack → scaffold path the one-liner exercises.
+          mkdir -p "$TARGET/_bmad/bmm"
+          printf '%s\n' \
+            'output_folder: "{project-root}/features"' \
+            'project_knowledge: "docs"' \
+            'user_skill_level: intermediate' > "$TARGET/_bmad/bmm/config.yaml"
+          curl -fsSL --retry 3 "https://raw.githubusercontent.com/$REPO/$SHA/install.sh" \
+            | META_ROUTER_REPO="$REPO" META_ROUTER_REF="$SHA" \
+              BMAD_SETUP_NONINTERACTIVE=1 \
+              BMAD_OUTPUT_FOLDER=features BMAD_DOCS_FOLDER=docs \
+              BMAD_SETUP_TOOL=claude-code BMAD_SETUP_WORKSPACES=alpha \
+              bash -s -- "$TARGET"
+
+      - name: Assert the metarepo was scaffolded
+        run: |
+          set -euxo pipefail
+          TARGET="$RUNNER_TEMP/smoke-metarepo"
+          test -f "$TARGET/.claude/skills/meta-router/scripts/meta-router.sh"
+          test -d "$TARGET/workspaces/alpha/features/planning-artifacts"
+          test -f "$TARGET/AGENTS.md"
+          test -L "$TARGET/features"
+          cd "$TARGET"
+          current="$(bash .claude/skills/meta-router/scripts/meta-router.sh current)"
+          echo "$current"
+          case "$current" in *alpha*) ;; *) echo "::error::current did not report the active workspace"; exit 1 ;; esac

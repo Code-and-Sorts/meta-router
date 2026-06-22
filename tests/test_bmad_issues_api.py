@@ -478,7 +478,7 @@ class TestCloseOrphans:
         board = bmad_issues.ProjectBoard.null(dry_run=False)
         bmad_issues.close_orphans(
             "o/meta", {"1-9-old": issue}, prds=[], epics={}, stories=[],
-            project_name="alpha", dry_run=False, board=board,
+            workspace_name="alpha", dry_run=False, board=board,
         )
         assert issue["state"] == "closed"
         assert "bmad-orphaned" in {l["name"] for l in issue["labels"]}
@@ -492,7 +492,7 @@ class TestCloseOrphans:
         board = bmad_issues.ProjectBoard.null(dry_run=False)
         bmad_issues.close_orphans(
             "o/meta", {"1-9-old": issue}, prds=[], epics={}, stories=[],
-            project_name="alpha", dry_run=False, board=board,
+            workspace_name="alpha", dry_run=False, board=board,
         )
         assert fake.writes == []
 
@@ -627,12 +627,11 @@ Placeholder epic with no stories yet.
 def metarepo(fake, tmp_path, monkeypatch):
     """A minimal metarepo with one project (alpha) wired to a fake board."""
     monkeypatch.setattr(bmad_issues, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(bmad_issues, "PROJECTS_DIR", tmp_path / "projects")
-    monkeypatch.setattr(bmad_issues, "ACTIVE_FILE", tmp_path / "active-project.txt")
+    monkeypatch.setattr(bmad_issues, "WORKSPACES_DIR", tmp_path / "workspaces")
     monkeypatch.setenv("BMAD_METAREPO_SLUG", "org/meta")
     monkeypatch.setenv("BMAD_OUTPUT_FOLDER", "features")
 
-    project = tmp_path / "projects" / "alpha"
+    project = tmp_path / "workspaces" / "alpha"
     planning = project / "features" / "planning-artifacts"
     implementation = project / "features" / "implementation-artifacts"
     planning.mkdir(parents=True)
@@ -662,7 +661,7 @@ class TestSyncEndToEnd:
         return {by_number[number]: status for (_, number), status in titles.items()}
 
     def test_full_sync_creates_tree_and_statuses(self, fake, metarepo):
-        bmad_issues.sync_project("alpha", dry_run=False)
+        bmad_issues.sync_workspace("alpha", dry_run=False)
 
         titles = {i["title"] for i in fake.issues["org/meta"].values()}
         assert "Delivery: Alpha" in titles
@@ -689,9 +688,9 @@ class TestSyncEndToEnd:
         assert statuses["Planning: alpha"] == "In Progress"
 
     def test_second_run_writes_nothing(self, fake, metarepo):
-        bmad_issues.sync_project("alpha", dry_run=False)
+        bmad_issues.sync_workspace("alpha", dry_run=False)
         fake.writes.clear()
-        bmad_issues.sync_project("alpha", dry_run=False)
+        bmad_issues.sync_workspace("alpha", dry_run=False)
         # Sub-issue re-links are idempotent server-side; everything else must
         # be silent on an unchanged second run.
         noisy = [w for w in fake.writes if w[0] != "sub-issue"]
@@ -699,7 +698,7 @@ class TestSyncEndToEnd:
 
     def test_open_story_pr_forces_in_review_and_links(self, fake, metarepo):
         fake.add_pull("org/web", 12, "story/1-2-profile", state="open")
-        bmad_issues.sync_project("alpha", dry_run=False)
+        bmad_issues.sync_workspace("alpha", dry_run=False)
         statuses = self.board_statuses(fake)
         assert statuses["Story 1.2: Profile"] == "In Review"
         by_title = {i["title"]: i for i in fake.issues["org/meta"].values()}
@@ -708,24 +707,24 @@ class TestSyncEndToEnd:
     def test_other_projects_story_branches_ignored(self, fake, metarepo):
         # A PR in the shared metarepo (defaulted issues repo) must not match.
         fake.add_pull("org/meta", 5, "story/1-2-profile", state="open")
-        bmad_issues.sync_project("alpha", dry_run=False)
+        bmad_issues.sync_workspace("alpha", dry_run=False)
         assert self.board_statuses(fake)["Story 1.2: Profile"] == "In Progress"
 
     def test_dry_run_writes_nothing(self, fake, metarepo):
-        bmad_issues.sync_project("alpha", dry_run=True)
+        bmad_issues.sync_workspace("alpha", dry_run=True)
         assert fake.writes == []
 
     def test_manually_closed_zero_story_epic_left_alone(self, fake, metarepo):
-        bmad_issues.sync_project("alpha", dry_run=False)
+        bmad_issues.sync_workspace("alpha", dry_run=False)
         by_title = {i["title"]: i for i in fake.issues["org/meta"].values()}
         epic2 = by_title["Epic 2: Future"]
         epic2["state"] = "closed"
         sprint = (
-            metarepo / "projects" / "alpha" / "features"
+            metarepo / "workspaces" / "alpha" / "features"
             / "implementation-artifacts" / "sprint-status.yaml"
         )
         sprint.write_text(SPRINT_YAML.replace("epic-2: backlog", "epic-2: in-progress"))
-        bmad_issues.sync_project("alpha", dry_run=False)
+        bmad_issues.sync_workspace("alpha", dry_run=False)
         board = fake.boards[("org", 7)]
         values = next(
             i["values"] for i in board["items"].values() if i["number"] == epic2["number"]
@@ -751,7 +750,7 @@ def portfolio_metarepo(fake, metarepo):
 
 class TestPortfolioBoard:
     def test_issues_land_on_both_boards_with_project_field(self, fake, portfolio_metarepo):
-        bmad_issues.sync_project("alpha", dry_run=False)
+        bmad_issues.sync_workspace("alpha", dry_run=False)
 
         by_title = {i["title"]: i for i in fake.issues["org/meta"].values()}
         story = by_title["Story 1.2: Profile"]
@@ -772,45 +771,45 @@ class TestPortfolioBoard:
         assert item_values(portfolio, planning["number"])["Project"] == "alpha"
 
     def test_project_option_created_once(self, fake, portfolio_metarepo):
-        bmad_issues.sync_project("alpha", dry_run=False)
+        bmad_issues.sync_workspace("alpha", dry_run=False)
         option_writes = [w for w in fake.writes if w[0] == "field-options"]
         assert len(option_writes) == 1
         assert option_writes[0][1][1] == ["alpha", "unassigned"]
         fake.writes.clear()
-        bmad_issues.sync_project("alpha", dry_run=False)
+        bmad_issues.sync_workspace("alpha", dry_run=False)
         assert [w for w in fake.writes if w[0] == "field-options"] == []
 
     def test_second_run_writes_nothing(self, fake, portfolio_metarepo):
-        bmad_issues.sync_project("alpha", dry_run=False)
+        bmad_issues.sync_workspace("alpha", dry_run=False)
         fake.writes.clear()
-        bmad_issues.sync_project("alpha", dry_run=False)
+        bmad_issues.sync_workspace("alpha", dry_run=False)
         noisy = [w for w in fake.writes if w[0] != "sub-issue"]
         assert noisy == []
 
     def test_portfolio_without_project_field_syncs_status_only(self, fake, portfolio_metarepo):
         fake.boards[("org", 9)]["fields"].pop("Project")
-        bmad_issues.sync_project("alpha", dry_run=False)
+        bmad_issues.sync_workspace("alpha", dry_run=False)
         portfolio = fake.boards[("org", 9)]
         assert portfolio["items"]  # statuses still mirrored
         assert all("Project" not in i["values"] for i in portfolio["items"].values())
 
     def test_no_portfolio_config_changes_nothing(self, fake, metarepo):
-        bmad_issues.sync_project("alpha", dry_run=False)
+        bmad_issues.sync_workspace("alpha", dry_run=False)
         assert ("org", 9) not in fake.boards
         assert fake.boards[("org", 7)]["items"]
 
     def test_missing_portfolio_board_does_not_block_sync(self, fake, metarepo):
         (metarepo / "github-sync.yaml").write_text("portfolio: 9\nportfolio_owner: org\n")
-        bmad_issues.sync_project("alpha", dry_run=False)  # board 9 doesn't exist
+        bmad_issues.sync_workspace("alpha", dry_run=False)  # board 9 doesn't exist
         titles = {i["title"] for i in fake.issues["org/meta"].values()}
         assert "Delivery: Alpha" in titles
 
 
 class TestSyncAllIsolation:
     def test_one_broken_project_does_not_block_the_rest(self, fake, metarepo, monkeypatch, capsys):
-        # "broken" sorts before "alpha"? No — configured_projects sorts, so
+        # "broken" sorts before "alpha"? No — configured_workspaces sorts, so
         # alpha runs after broken either way; make broken fail during config load.
-        broken = metarepo / "projects" / "a-broken"
+        broken = metarepo / "workspaces" / "a-broken"
         broken.mkdir(parents=True)
         (broken / "github-sync.yaml").write_text("repo: [unclosed\n")
 
@@ -828,4 +827,4 @@ class TestSyncAllIsolation:
     def test_all_healthy_projects_exit_zero(self, fake, metarepo, monkeypatch, capsys):
         monkeypatch.setattr(bmad_issues.sys, "argv", ["bmad-issues.py", "sync", "--all"])
         bmad_issues.main()
-        assert "Synced 1 project(s)" in capsys.readouterr().out
+        assert "Synced 1 workspace(s)" in capsys.readouterr().out

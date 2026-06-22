@@ -13,9 +13,9 @@
 [workflow]
 
 # Pre-flight: derive the affected repos from the story and create worktrees.
-# meta-router routes the active project through root-level symlinks (repos/,
+# meta-router routes the active workspace through root-level symlinks (repos/,
 # implementation/), so every path below is repo-root-relative — no need to know
-# the active project's name or its projects/<name>/ path.
+# the active workspace's name or its workspaces/<name>/ path.
 activation_steps_prepend = [
   "Read the story's '## Affected Repos' section to get the list of source repos this story touches (names match entries in repos.yaml). If the section is absent or empty, fall back to every repo in repos.yaml only when there is exactly one repo; otherwise ask the user which repos the story touches.",
   "Ensure each affected repo is cloned: run `bash __SKILLS_DIR__/meta-router/scripts/meta-router.sh clone <repo>` for any not yet present under repos/.",
@@ -25,7 +25,7 @@ activation_steps_prepend = [
 
 # Load the full worktree workflow as static context for the whole run, plus the
 # metarepo's overall shared context — org-wide standards that apply to every
-# project, loaded alongside the active project's project-context.md. Its path is
+# workspace, loaded alongside the active workspace's workspace-context.md. Its path is
 # tool-agnostic in the template; setup.sh resolves it to the configured agent
 # tool's knowledge dir (.claude/, .github/, .codex/, .agents/).
 persistent_facts = [

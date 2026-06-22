@@ -12,7 +12,7 @@ command -v tar  >/dev/null 2>&1 || err "tar is required"
 
 if [[ -z "$REF" ]]; then
   info "Resolving latest release of $REPO..."
-  REF="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
+  REF="$(curl -fsSL --retry 3 "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
         | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)" || true
   [[ -n "$REF" ]] || err "could not resolve the latest release of $REPO. Publish a release, or pin a ref: META_ROUTER_REF=<tag>"
 fi
@@ -21,7 +21,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 info "Downloading meta-router $REF..."
-curl -fsSL "https://github.com/$REPO/archive/$REF.tar.gz" \
+curl -fsSL --retry 3 "https://github.com/$REPO/archive/$REF.tar.gz" \
   | tar -xz -C "$TMP" --strip-components=1 \
   || err "failed to download $REPO@$REF (does the ref exist?)"
 

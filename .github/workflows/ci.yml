@@ -109,4 +109,6 @@ jobs:
           test -f "$TARGET/AGENTS.md"
           test -L "$TARGET/features"
           cd "$TARGET"
-          bash .claude/skills/meta-router/scripts/meta-router.sh current | grep -q alpha
+          current="$(bash .claude/skills/meta-router/scripts/meta-router.sh current)"
+          echo "$current"
+          case "$current" in *alpha*) ;; *) echo "::error::current did not report the active workspace"; exit 1 ;; esac
